@@ -103,6 +103,15 @@
         <label>Message
           <textarea id="followup-body" rows="7"></textarea>
         </label>
+        <label>Listing URL to track (optional)
+          <input id="tracking-destination-url" placeholder="https://example-listing.com/123-main-st" />
+        </label>
+        <div class="hero-actions">
+          <button id="create-tracking-link" class="btn btn-secondary" type="button">Create tracked listing link</button>
+          <button id="insert-tracking-link" class="btn btn-secondary" type="button">Insert tracked link into message</button>
+        </div>
+        <p id="tracking-status" class="meta">Select a lead to generate a tracked listing link.</p>
+        <a id="tracking-url" class="meta" href="#" target="_blank" rel="noreferrer" style="display:none;"></a>
         <button id="send-followup" class="btn btn-primary" type="button">Send reviewed follow-up</button>
       </section>
 

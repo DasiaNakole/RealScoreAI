@@ -76,6 +76,20 @@ create table if not exists message_templates (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists tracking_links (
+  id text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  lead_id uuid not null references leads(id) on delete cascade,
+  destination_url text not null,
+  channel text not null default 'email',
+  click_count integer not null default 0,
+  last_clicked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_tracking_links_user_id on tracking_links(user_id);
+create index if not exists idx_tracking_links_lead_id on tracking_links(lead_id);
+
 create or replace function set_updated_at()
 returns trigger as $$
 begin

@@ -402,3 +402,46 @@ export async function getAdminMetrics() {
     leadsPerUser: Number(leadsPerUser.rows[0].leads_per_user)
   };
 }
+
+export async function createTrackingLink({ id, userId, leadId, destinationUrl, channel = "email" }) {
+  const result = await pool.query(
+    `insert into tracking_links (id, user_id, lead_id, destination_url, channel)
+     values ($1, $2, $3, $4, $5)
+     returning id, user_id, lead_id, destination_url, channel, click_count, last_clicked_at, created_at`,
+    [id, userId, leadId, destinationUrl, channel]
+  );
+  return result.rows[0];
+}
+
+export async function listTrackingLinksByLeadForUser(leadId, userId) {
+  const result = await pool.query(
+    `select id, user_id, lead_id, destination_url, channel, click_count, last_clicked_at, created_at
+     from tracking_links
+     where user_id = $1 and lead_id = $2
+     order by created_at desc`,
+    [userId, leadId]
+  );
+  return result.rows;
+}
+
+export async function getTrackingLinkById(id) {
+  const result = await pool.query(
+    `select id, user_id, lead_id, destination_url, channel, click_count, last_clicked_at, created_at
+     from tracking_links
+     where id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function bumpTrackingLinkClick(id) {
+  const result = await pool.query(
+    `update tracking_links
+     set click_count = click_count + 1,
+         last_clicked_at = now()
+     where id = $1
+     returning id, user_id, lead_id, destination_url, channel, click_count, last_clicked_at, created_at`,
+    [id]
+  );
+  return result.rows[0] || null;
+}

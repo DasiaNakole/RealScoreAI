@@ -117,6 +117,14 @@ Examples inserted into `events` table:
 
 This means lead events can be ingested from external channels and reflected live in the dashboard.
 
+## Phase 1 external listing tracking
+
+- Create tracked link: `POST /api/leads/:leadId/tracking-links`
+- List tracked links: `GET /api/leads/:leadId/tracking-links`
+- Public redirect tracker: `GET /r/:trackingId`
+
+On click, the app logs `listing_clicked` into `events` and increments click count.
+
 ## Production hardening
 
 - In production (`NODE_ENV=production`), startup fails if required env vars are missing.

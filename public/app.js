@@ -10,6 +10,7 @@ let refreshTimer = null;
 let stream = null;
 let allLeadsCache = [];
 let cadenceDueCache = [];
+let lastTrackingUrl = '';
 
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
@@ -86,6 +87,26 @@ function setLeadManagerStatus(message, isError = false) {
   node.style.color = isError ? '#ff5f7a' : '';
 }
 
+function setTrackingStatus(message, isError = false) {
+  const node = document.getElementById('tracking-status');
+  node.textContent = message;
+  node.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
+function setTrackingUrl(url) {
+  const node = document.getElementById('tracking-url');
+  lastTrackingUrl = String(url || '').trim();
+  if (!lastTrackingUrl) {
+    node.style.display = 'none';
+    node.href = '#';
+    node.textContent = '';
+    return;
+  }
+  node.style.display = '';
+  node.href = lastTrackingUrl;
+  node.textContent = lastTrackingUrl;
+}
+
 function renderScoreDetails(data) {
   document.getElementById('score-summary').textContent = data.whyScore.summary;
   document.getElementById('score-ai-meta').textContent = `Trend: ${data.behaviorTrend} | Confidence: ${data.confidenceScore}% | Intent confidence: ${Math.round((data.aiIntentClassification?.confidence || 0) * 100)}%`;
@@ -157,6 +178,8 @@ function leadItem(lead) {
 
   li.addEventListener('click', async () => {
     selectedLeadId = lead.id;
+    setTrackingStatus(`Lead selected: ${lead.name}.`);
+    setTrackingUrl('');
     const explanation = await authedFetch(`/api/leads/${lead.id}/explanation`);
     if (!explanation) return;
     renderScoreDetails(explanation);
@@ -429,7 +452,49 @@ document.getElementById('load-tone-profile').addEventListener('click', async () 
   }
 });
 
+document.getElementById('create-tracking-link').addEventListener('click', async () => {
+  if (!selectedLeadId) {
+    setTrackingStatus('Select a lead first.', true);
+    return;
+  }
+
+  const destinationUrl = document.getElementById('tracking-destination-url').value.trim();
+  if (!destinationUrl) {
+    setTrackingStatus('Enter a destination listing URL first.', true);
+    return;
+  }
+
+  try {
+    const data = await authedFetch(`/api/leads/${selectedLeadId}/tracking-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        destinationUrl,
+        channel: 'email'
+      })
+    });
+    if (!data) return;
+
+    setTrackingUrl(data.link?.trackingUrl || '');
+    setTrackingStatus('Tracked listing link created.');
+  } catch (error) {
+    setTrackingStatus(error.message, true);
+  }
+});
+
+document.getElementById('insert-tracking-link').addEventListener('click', () => {
+  if (!lastTrackingUrl) {
+    setTrackingStatus('Create a tracked listing link first.', true);
+    return;
+  }
+  const bodyNode = document.getElementById('followup-body');
+  const spacer = bodyNode.value.trim().length ? '\n\n' : '';
+  bodyNode.value = `${bodyNode.value}${spacer}Property link: ${lastTrackingUrl}`.trim();
+  setTrackingStatus('Tracked link inserted into follow-up message.');
+});
+
 clearLeadForm();
 renderCadenceQueue();
+setTrackingUrl('');
 loadDashboard();
 connectRealtimeStream();

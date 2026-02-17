@@ -11,6 +11,8 @@ import { buildSuggestedFollowUp, buildDailyDigestEmail, buildMonthlyNurtureEmail
 import { getSmtpStatus, sendEmail } from "./email/service.js";
 import { runSchema } from "./db/client.js";
 import {
+  bumpTrackingLinkClick,
+  createTrackingLink,
   createUser,
   createLead,
   deleteLeadForUser,
@@ -18,6 +20,7 @@ import {
   getLeadByEmailForUser,
   getLeadById,
   getLeadByIdForUser,
+  getTrackingLinkById,
   getTemplateByKey,
   listAllLeads,
   listTemplates,
@@ -30,6 +33,7 @@ import {
   listTrialingUsers,
   listEventsForLead,
   listLeadsByUser,
+  listTrackingLinksByLeadForUser,
   listUserEventsByType,
   touchUser,
   updateLeadForUser,
@@ -42,6 +46,7 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === "production";
+const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const ADMIN_KEY = process.env.ADMIN_KEY || (!isProduction ? "beta-admin-2026" : "");
 const WEBHOOK_KEY = process.env.WEBHOOK_KEY || (!isProduction ? "lead-webhook-2026" : "");
 
@@ -442,6 +447,31 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "lead-prioritization-engine" });
 });
 
+app.get("/r/:trackingId", async (req, res) => {
+  const trackingId = String(req.params.trackingId || "").trim();
+  if (!trackingId) return res.status(404).send("Tracking link not found.");
+
+  const link = await getTrackingLinkById(trackingId);
+  if (!link) return res.status(404).send("Tracking link not found.");
+
+  const updated = await bumpTrackingLinkClick(trackingId);
+  await insertEvent({
+    userId: link.user_id,
+    leadId: link.lead_id,
+    eventType: "listing_clicked",
+    metadata: {
+      trackingId,
+      destinationUrl: link.destination_url,
+      channel: link.channel,
+      clickCount: updated?.click_count || link.click_count,
+      userAgent: req.get("user-agent") || "",
+      referrer: req.get("referer") || ""
+    }
+  });
+
+  return res.redirect(302, link.destination_url);
+});
+
 app.get("/api/plans", (_req, res) => {
   res.json({ plans: listPlans() });
 });
@@ -678,6 +708,55 @@ app.get("/api/leads/:leadId/suggested-follow-up", requireAuth, requireActiveAcce
     isHighPriority: lead.score >= 75,
     score: lead.score,
     suggestion: { subject: templated.subject, body: templated.body }
+  });
+});
+
+app.get("/api/leads/:leadId/tracking-links", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const links = await listTrackingLinksByLeadForUser(lead.id, req.user.id);
+  res.json({
+    leadId: lead.id,
+    links: links.map((item) => ({
+      ...item,
+      trackingUrl: `${APP_URL}/r/${item.id}`
+    }))
+  });
+});
+
+app.post("/api/leads/:leadId/tracking-links", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const destinationUrl = String(req.body?.destinationUrl || "").trim();
+  const channel = String(req.body?.channel || "email").trim().toLowerCase();
+  if (!destinationUrl) return res.status(400).json({ error: "destinationUrl is required." });
+  if (!/^https?:\/\//i.test(destinationUrl)) {
+    return res.status(400).json({ error: "destinationUrl must start with http:// or https://." });
+  }
+
+  const id = crypto.randomBytes(8).toString("hex");
+  const link = await createTrackingLink({
+    id,
+    userId: req.user.id,
+    leadId: lead.id,
+    destinationUrl,
+    channel
+  });
+
+  await insertEvent({
+    userId: req.user.id,
+    leadId: lead.id,
+    eventType: "tracking_link_created",
+    metadata: { trackingId: id, destinationUrl, channel }
+  });
+
+  res.status(201).json({
+    link: {
+      ...link,
+      trackingUrl: `${APP_URL}/r/${id}`
+    }
   });
 });
 
