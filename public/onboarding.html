@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Onboarding | Lead Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col">
+      <section class="panel form-panel">
+        <p class="badge">Simple Onboarding</p>
+        <h1>Set up your agent profile</h1>
+        <form id="onboarding-form">
+          <label>Primary market <input name="market" placeholder="Phoenix, AZ" required /></label>
+          <label>Monthly leads <input name="monthlyLeadVolume" type="number" min="1" required /></label>
+          <label>Main goal
+            <select name="goal" required>
+              <option value="">Select one</option>
+              <option value="close_more_deals">Close more deals</option>
+              <option value="faster_follow_up">Faster follow-up</option>
+              <option value="improve_conversion">Improve conversion rate</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit">Continue to payment</button>
+        </form>
+        <p class="meta" id="onboarding-message"></p>
+      </section>
+    </main>
+
+    <script src="onboarding.js"></script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login | Lead Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="auth-wrap">
+      <section class="panel form-panel">
+        <h1>Create account</h1>
+        <p class="meta">Plan: <span id="selected-plan">Pro</span></p>
+        <form id="register-form">
+          <label>Name <input name="name" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Password <input name="password" type="password" required /></label>
+          <p class="meta">Strong password: 10+ chars, uppercase, lowercase, number, special character.</p>
+          <button class="btn btn-primary" type="submit">Create account</button>
+        </form>
+      </section>
+
+      <section class="panel form-panel">
+        <h1>Login</h1>
+        <form id="login-form">
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Password <input name="password" type="password" required /></label>
+          <button class="btn btn-secondary" type="submit">Login</button>
+        </form>
+        <p class="meta" id="auth-message"></p>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+  </body>
+</html>

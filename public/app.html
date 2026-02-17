@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lead Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="dashboard">
+      <header class="dash-head">
+        <div>
+          <p class="badge">Agent Command Center</p>
+          <h1>Today's Focus</h1>
+          <p class="meta" id="welcome-name"></p>
+        </div>
+        <a class="btn btn-secondary" href="index.html">Back to Pricing</a>
+      </header>
+
+      <section class="cards-grid">
+        <article class="panel">
+          <h2>Top 5 Leads</h2>
+          <ul id="today-focus" class="lead-list"></ul>
+        </article>
+        <article class="panel">
+          <h2>At Risk</h2>
+          <ul id="at-risk" class="lead-list"></ul>
+        </article>
+        <article class="panel">
+          <h2>Low Value</h2>
+          <ul id="low-value" class="lead-list"></ul>
+        </article>
+      </section>
+
+      <section class="panel lead-manager-panel">
+        <h2>Lead Manager</h2>
+        <form id="lead-form" class="lead-form-grid">
+          <input type="hidden" id="lead-id" />
+          <label>Name <input id="lead-name" required /></label>
+          <label>Email <input id="lead-email" type="email" required /></label>
+          <label>Phone <input id="lead-phone" /></label>
+          <label>Status
+            <select id="lead-stage">
+              <option value="new">new</option>
+              <option value="qualified">qualified</option>
+              <option value="touring">touring</option>
+              <option value="nurture">nurture</option>
+              <option value="closed">closed</option>
+            </select>
+          </label>
+          <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
+          <label>Buyer Intent
+            <select id="lead-intent">
+              <option value="hot">hot (ready now)</option>
+              <option value="warm">warm (shopping soon)</option>
+              <option value="neutral">neutral (researching)</option>
+              <option value="cold">cold (long timeline)</option>
+              <option value="unknown">unknown</option>
+            </select>
+          </label>
+          <label>Follow-Through Signal
+            <select id="lead-follow-through-signal">
+              <option value="none">none yet</option>
+              <option value="replied">replied quickly</option>
+              <option value="docs_shared">docs/pre-qual shared</option>
+              <option value="tour_booked">tour booked</option>
+              <option value="multiple_tours">multiple tours completed</option>
+              <option value="offer_submitted">offer submitted</option>
+            </select>
+          </label>
+          <input id="lead-follow-through" type="hidden" value="0" />
+          <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
+          <div class="hero-actions">
+            <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
+            <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+        </form>
+        <p id="lead-manager-status" class="meta"></p>
+        <div id="lead-manager-list" class="lead-manager-list"></div>
+      </section>
+
+      <section class="panel explanation">
+        <h2>Why this score?</h2>
+        <p id="score-summary">Select a lead to view scoring breakdown.</p>
+        <p id="score-ai-meta" class="meta"></p>
+        <div id="score-details"></div>
+      </section>
+
+      <section class="panel followup-panel">
+        <h2>Suggested Follow-Up</h2>
+        <p id="followup-status" class="meta">Select a lead to generate a suggested message.</p>
+        <div class="hero-actions">
+          <button id="run-followup-cadence" class="btn btn-secondary" type="button">Run cadence (hot 24h / warm 72h)</button>
+          <button id="load-tone-profile" class="btn btn-secondary" type="button">Load my tone profile</button>
+        </div>
+        <p id="tone-profile" class="meta"></p>
+        <label>Subject
+          <input id="followup-subject" />
+        </label>
+        <label>Message
+          <textarea id="followup-body" rows="7"></textarea>
+        </label>
+        <button id="send-followup" class="btn btn-primary" type="button">Send reviewed follow-up</button>
+      </section>
+
+      <section class="panel">
+        <h2>Cadence Queue</h2>
+        <p id="cadence-status" class="meta">Run cadence to load due leads here.</p>
+        <div id="cadence-queue" class="invite-list"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

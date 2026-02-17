@@ -1,0 +1,271 @@
+const ADMIN_KEY_STORAGE = 'adminKey';
+
+const keyInput = document.getElementById('admin-key');
+const messageNode = document.getElementById('admin-message');
+const inviteListNode = document.getElementById('invite-list');
+const templateKeyNode = document.getElementById('template-key');
+const templatePlanScopeNode = document.getElementById('template-plan-scope');
+const templateSubjectNode = document.getElementById('template-subject');
+const templateBodyNode = document.getElementById('template-body');
+
+let templateMap = new Map();
+
+keyInput.value = localStorage.getItem(ADMIN_KEY_STORAGE) || '';
+
+function currentKey() {
+  return keyInput.value.trim();
+}
+
+function setMessage(message, isError = false) {
+  messageNode.textContent = message;
+  messageNode.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
+async function adminFetch(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'x-admin-key': currentKey()
+    }
+  });
+
+  if (response.headers.get('content-type')?.includes('text/csv')) {
+    if (!response.ok) throw new Error('Failed CSV export');
+    return response.text();
+  }
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function renderInvites(invites) {
+  inviteListNode.innerHTML = '';
+
+  if (!invites.length) {
+    inviteListNode.innerHTML = '<p class="meta">No invites yet.</p>';
+    return;
+  }
+
+  invites.forEach((invite) => {
+    const card = document.createElement('article');
+    card.className = 'invite-item';
+
+    const name = invite.name || 'No name';
+    const sentAt = invite.sentAt ? `Sent: ${new Date(invite.sentAt).toLocaleString()}` : 'Not sent';
+
+    card.innerHTML = `
+      <strong>${name}</strong>
+      <span class="meta">${invite.email}</span>
+      <span class="meta">Status: ${invite.status}</span>
+      <span class="meta">${sentAt}</span>
+      <a class="meta" href="${invite.inviteUrl}" target="_blank" rel="noreferrer">Open invite link</a>
+      <button class="btn btn-secondary" data-send-id="${invite.id}">Mark sent</button>
+    `;
+
+    inviteListNode.appendChild(card);
+  });
+
+  document.querySelectorAll('[data-send-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await adminFetch(`/api/admin/invites/${button.dataset.sendId}/send`, { method: 'POST' });
+        await loadInvites();
+      } catch (error) {
+        setMessage(error.message, true);
+      }
+    });
+  });
+}
+
+async function loadInvites() {
+  const data = await adminFetch('/api/admin/invites');
+  renderInvites(data.invites || []);
+}
+
+async function loadTemplates() {
+  const data = await adminFetch('/api/admin/templates');
+  templateMap = new Map((data.templates || []).map((tpl) => [tpl.key, tpl]));
+  syncTemplateForm();
+}
+
+function syncTemplateForm() {
+  const key = templateKeyNode.value;
+  const scope = templatePlanScopeNode.value;
+  const mapKey = scope === 'all' ? key : `${key}__${scope}`;
+  const tpl = templateMap.get(mapKey);
+  if (tpl) {
+    templateSubjectNode.value = tpl.subject;
+    templateBodyNode.value = tpl.body;
+    return;
+  }
+
+  const defaults = {
+    followup_hot: {
+      subject: 'Next steps on your home search, {{firstName}}',
+      body: 'Hi {{firstName}},\\n\\nGreat connecting with you. I lined up 3 options that match what you asked for. Would you like a quick 10-minute call today to pick the best one and schedule tours?\\n\\n- Your agent'
+    },
+    followup_default: {
+      subject: 'Quick follow-up on your search goals, {{firstName}}',
+      body: 'Hi {{firstName}},\\n\\nI wanted to quickly check in. If your timeline is still active, I can send a tighter shortlist based on your must-haves. Reply with your top priorities and target move date.\\n\\n- Your agent'
+    },
+    nurture_monthly: {
+      subject: 'Still searching, {{firstName}}?',
+      body: 'Hi {{leadName}},\\n\\nJust checking in with a light monthly update. If your home search is active again, reply with your top 2 priorities and we will line up options fast.\\n\\nNo rush at all. When timing is right, we are ready.\\n\\n- Your agent'
+    },
+    digest_daily: {
+      subject: "Today's Top 5 Leads",
+      body: 'Hi {{firstName}},\\n\\nToday focus on these leads:\\n{{leadList}}\\n\\nOpen your dashboard for action recommendations.'
+    },
+    beta_ending: {
+      subject: 'RealScoreAI beta ends in {{daysLeft}} days',
+      body: 'Hi {{firstName}},\\n\\nYour RealScoreAI {{plan}} beta access ends in {{daysLeft}} days.\\n\\nIf you want to keep your lead scores, history, and workflow active with no data loss, move to early adopter pricing before beta ends.\\n\\n- RealScoreAI Team'
+    }
+  };
+
+  const fallback = defaults[key] || { subject: '', body: '' };
+  templateSubjectNode.value = fallback.subject;
+  templateBodyNode.value = fallback.body;
+}
+
+function downloadCsv(filename, content) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('save-admin-key').addEventListener('click', () => {
+  localStorage.setItem(ADMIN_KEY_STORAGE, currentKey());
+  setMessage('Admin key saved.');
+});
+
+document.getElementById('refresh-invites').addEventListener('click', async () => {
+  try {
+    await loadInvites();
+    await loadTemplates();
+    setMessage('Admin data refreshed.');
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('run-beta-reminders').addEventListener('click', async () => {
+  try {
+    const result = await adminFetch('/api/admin/automation/beta-ending-reminders', { method: 'POST' });
+    setMessage(`Beta reminders run: sent ${result.sentCount}, skipped ${result.skippedCount}.`);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('invite-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    await adminFetch('/api/admin/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: form.get('name'),
+        email: form.get('email')
+      })
+    });
+
+    event.currentTarget.reset();
+    await loadInvites();
+    setMessage('Invite created.');
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+templateKeyNode.addEventListener('change', syncTemplateForm);
+templatePlanScopeNode.addEventListener('change', syncTemplateForm);
+
+document.getElementById('template-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const key = templateKeyNode.value;
+    await adminFetch(`/api/admin/templates/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        planScope: templatePlanScopeNode.value,
+        subject: templateSubjectNode.value,
+        body: templateBodyNode.value
+      })
+    });
+
+    await loadTemplates();
+    setMessage(`Template ${key} saved for ${templatePlanScopeNode.value}.`);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('export-usage').addEventListener('click', async () => {
+  try {
+    const csv = await adminFetch('/api/admin/export/usage.csv');
+    downloadCsv('usage-export.csv', csv);
+    setMessage('Usage CSV downloaded.');
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('export-leads').addEventListener('click', async () => {
+  try {
+    const csv = await adminFetch('/api/admin/export/leads.csv');
+    downloadCsv('leads-export.csv', csv);
+    setMessage('Leads CSV downloaded.');
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('check-email-status').addEventListener('click', async () => {
+  try {
+    const data = await adminFetch('/api/admin/email/status');
+    const smtp = data.smtp || {};
+    setMessage(`SMTP mode: ${smtp.mode}. Host: ${smtp.host || 'n/a'}. From: ${smtp.from || 'n/a'}.`);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+document.getElementById('email-test-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const to = document.getElementById('email-test-to').value.trim();
+    const result = await adminFetch('/api/admin/email/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to })
+    });
+    setMessage(`Test email sent in ${result.delivery.mode} mode. Message ID: ${result.delivery.messageId || 'n/a'}`);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+async function init() {
+  if (!currentKey()) return;
+  try {
+    await loadInvites();
+    await loadTemplates();
+    setMessage('Admin ready.');
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+init();

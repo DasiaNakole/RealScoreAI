@@ -1,0 +1,19 @@
+{
+  "name": "lead-prioritization-engine",
+  "version": "0.3.0",
+  "description": "AI-powered lead prioritization and decision engine for real estate agents",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "nodemailer": "^6.9.15",
+    "pg": "^8.13.1",
+    "stripe": "^18.0.0"
+  }
+}

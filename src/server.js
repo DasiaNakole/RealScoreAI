@@ -1,0 +1,1322 @@
+import crypto from "crypto";
+import express from "express";
+import cors from "cors";
+
+import { applyLeadEvent } from "./scoring/pipeline.js";
+import { calculateLeadScore } from "./scoring/engine.js";
+import { listPlans, plans } from "./billing/plans.js";
+import { createCheckoutSession } from "./billing/stripe.js";
+import { classifyIntentFromMessage } from "./ai/intelligence.js";
+import { buildSuggestedFollowUp, buildDailyDigestEmail, buildMonthlyNurtureEmail, buildBetaEndingReminderEmail } from "./email/templates.js";
+import { getSmtpStatus, sendEmail } from "./email/service.js";
+import { runSchema } from "./db/client.js";
+import {
+  createUser,
+  createLead,
+  deleteLeadForUser,
+  getAdminMetrics,
+  getLeadByEmailForUser,
+  getLeadById,
+  getLeadByIdForUser,
+  getTemplateByKey,
+  listAllLeads,
+  listTemplates,
+  getSubscriptionByUserId,
+  getUsageByUser,
+  getUserByEmail,
+  getUserById,
+  hasUserEventForTrial,
+  insertEvent,
+  listTrialingUsers,
+  listEventsForLead,
+  listLeadsByUser,
+  listUserEventsByType,
+  touchUser,
+  updateLeadForUser,
+  updateLeadSnapshot,
+  updateUserOnboarding,
+  upsertTemplate,
+  upsertSubscription
+} from "./db/repo.js";
+
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
+const isProduction = process.env.NODE_ENV === "production";
+const ADMIN_KEY = process.env.ADMIN_KEY || (!isProduction ? "beta-admin-2026" : "");
+const WEBHOOK_KEY = process.env.WEBHOOK_KEY || (!isProduction ? "lead-webhook-2026" : "");
+
+const sessions = new Map();
+const invites = new Map();
+const streamClients = new Map();
+
+const SEED_LEADS = [
+  {
+    name: "Alyssa Carter",
+    email: "alyssa@example.com",
+    phone: "555-210-0001",
+    status: "touring",
+    signals: { responseTimeMinutes: 8, messageIntent: "hot", followThroughRate: 0.9, weeklyEngagementTouches: 6 },
+    lastActivityAt: "2026-02-15T15:00:00.000Z"
+  },
+  {
+    name: "Marcus Lee",
+    email: "marcus@example.com",
+    phone: "555-210-0002",
+    status: "new",
+    signals: { responseTimeMinutes: 140, messageIntent: "warm", followThroughRate: 0.5, weeklyEngagementTouches: 2 },
+    lastActivityAt: "2026-02-12T15:00:00.000Z"
+  },
+  {
+    name: "Isabella Hart",
+    email: "isabella@example.com",
+    phone: "555-210-0003",
+    status: "nurture",
+    signals: { responseTimeMinutes: 500, messageIntent: "cold", followThroughRate: 0.2, weeklyEngagementTouches: 0 },
+    lastActivityAt: "2026-02-08T15:00:00.000Z"
+  },
+  {
+    name: "Noah Patel",
+    email: "noah@example.com",
+    phone: "555-210-0004",
+    status: "qualified",
+    signals: { responseTimeMinutes: 20, messageIntent: "warm", followThroughRate: 0.8, weeklyEngagementTouches: 4 },
+    lastActivityAt: "2026-02-14T15:00:00.000Z"
+  },
+  {
+    name: "Grace Kim",
+    email: "grace@example.com",
+    phone: "555-210-0005",
+    status: "new",
+    signals: { responseTimeMinutes: 60, messageIntent: "neutral", followThroughRate: 0.45, weeklyEngagementTouches: 1 },
+    lastActivityAt: "2026-02-11T15:00:00.000Z"
+  },
+  {
+    name: "Daniel Brooks",
+    email: "daniel@example.com",
+    phone: "555-210-0006",
+    status: "new",
+    signals: { responseTimeMinutes: 10, messageIntent: "hot", followThroughRate: 0.7, weeklyEngagementTouches: 5 },
+    lastActivityAt: "2026-02-15T12:00:00.000Z"
+  }
+];
+
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
+
+function validateStrongPassword(password) {
+  const value = String(password || "");
+  const checks = [
+    { ok: value.length >= 10, rule: "at least 10 characters" },
+    { ok: /[A-Z]/.test(value), rule: "one uppercase letter" },
+    { ok: /[a-z]/.test(value), rule: "one lowercase letter" },
+    { ok: /[0-9]/.test(value), rule: "one number" },
+    { ok: /[^A-Za-z0-9]/.test(value), rule: "one special character" }
+  ];
+
+  const failed = checks.filter((item) => !item.ok).map((item) => item.rule);
+  return {
+    valid: failed.length === 0,
+    message: failed.length ? `Password must include ${failed.join(", ")}.` : ""
+  };
+}
+
+function createSession(userId) {
+  const token = crypto.randomBytes(24).toString("hex");
+  sessions.set(token, { userId, createdAt: new Date().toISOString() });
+  return token;
+}
+
+function sanitizeUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    betaFlag: user.beta_flag,
+    createdAt: user.created_at,
+    lastActiveAt: user.last_active_at
+  };
+}
+
+async function seedLeadsForUser(userId) {
+  const existing = await listLeadsByUser(userId);
+  if (existing.length > 0) return;
+
+  for (const lead of SEED_LEADS) {
+    const scored = calculateLeadScore(lead.signals);
+    await createLead({
+      userId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      status: lead.status,
+      score: scored.score,
+      bucket: scored.bucket,
+      signals: lead.signals,
+      behaviorTrend: "stable",
+      confidenceScore: 62,
+      lastActivityAt: lead.lastActivityAt
+    });
+  }
+}
+
+async function getSubscriptionStatus(userId) {
+  const subscription = await getSubscriptionByUserId(userId);
+  if (!subscription) {
+    return { hasAccess: false, reason: "missing_payment", subscription: null };
+  }
+
+  const now = Date.now();
+  const trialEnds = subscription.trial_ends_at ? new Date(subscription.trial_ends_at).getTime() : 0;
+  const paid = subscription.status === "active";
+  const trialActive = subscription.status === "trialing" && now <= trialEnds;
+
+  return {
+    hasAccess: paid || trialActive,
+    reason: paid || trialActive ? "ok" : "trial_expired",
+    subscription: {
+      planId: subscription.plan,
+      status: subscription.status,
+      trialEndsAt: subscription.trial_ends_at,
+      paymentMethodLast4: subscription.payment_method_last4,
+      cardholderName: subscription.cardholder_name
+    }
+  };
+}
+
+function getSessionFromRequest(req) {
+  const authHeader = req.headers.authorization || "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const token = headerToken || queryToken;
+  const session = sessions.get(token);
+  return { token, session };
+}
+
+async function requireAuth(req, res, next) {
+  const { token, session } = getSessionFromRequest(req);
+  if (!session) {
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  }
+
+  const user = await getUserById(session.userId);
+  if (!user) {
+    return res.status(401).json({ error: "Session is invalid." });
+  }
+
+  req.user = user;
+  req.token = token;
+  await touchUser(user.id);
+  return next();
+}
+
+async function requireActiveAccess(req, res, next) {
+  const access = await getSubscriptionStatus(req.user.id);
+  if (!access.hasAccess) {
+    return res.status(402).json({ error: "Payment required before dashboard access.", code: access.reason });
+  }
+  req.subscription = access.subscription;
+  return next();
+}
+
+function requireAdminKey(req, res, next) {
+  const key = req.headers["x-admin-key"] || req.query.adminKey || "";
+  if (key !== ADMIN_KEY) {
+    return res.status(401).json({ error: "Invalid admin key." });
+  }
+  return next();
+}
+
+function requireWebhookKey(req, res, next) {
+  const key = req.headers["x-webhook-key"] || "";
+  if (key !== WEBHOOK_KEY) {
+    return res.status(401).json({ error: "Invalid webhook key." });
+  }
+  return next();
+}
+
+function addStreamClient(user, res) {
+  const clientId = crypto.randomBytes(12).toString("hex");
+  streamClients.set(clientId, { clientId, userId: user.id, res });
+  return clientId;
+}
+
+function removeStreamClient(clientId) {
+  streamClients.delete(clientId);
+}
+
+function broadcastToUser(userId, event, payload) {
+  const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const client of streamClients.values()) {
+    if (client.userId === userId) {
+      client.res.write(message);
+    }
+  }
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (text.includes(",") || text.includes("\"") || text.includes("\n")) {
+    return `"${text.replaceAll("\"", "\"\"")}"`;
+  }
+  return text;
+}
+
+function toCsv(rows, columns) {
+  const header = columns.join(",");
+  const lines = rows.map((row) => columns.map((column) => csvEscape(row[column])).join(","));
+  return [header, ...lines].join("\n");
+}
+
+const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
+  none: 0.1,
+  replied: 0.35,
+  docs_shared: 0.55,
+  tour_booked: 0.75,
+  multiple_tours: 0.88,
+  offer_submitted: 0.97
+};
+
+function normalizeFollowThroughRate(rawRate, rawSignal) {
+  const signal = String(rawSignal || "").trim().toLowerCase();
+  if (signal && FOLLOW_THROUGH_SIGNAL_TO_RATE[signal] !== undefined) {
+    return FOLLOW_THROUGH_SIGNAL_TO_RATE[signal];
+  }
+
+  const numeric = Number(rawRate);
+  if (Number.isFinite(numeric)) {
+    return Math.max(0, Math.min(1, numeric));
+  }
+
+  return FOLLOW_THROUGH_SIGNAL_TO_RATE.none;
+}
+
+function renderTemplateString(template, vars) {
+  let output = String(template || "");
+  for (const [key, value] of Object.entries(vars || {})) {
+    output = output.replaceAll(`{{${key}}}`, String(value ?? ""));
+  }
+  return output;
+}
+
+async function resolveTemplate(key, fallbackSubject, fallbackBody, vars) {
+  const stored = await getTemplateByKey(key);
+  const subjectTemplate = stored?.subject || fallbackSubject;
+  const bodyTemplate = stored?.body || fallbackBody;
+  return {
+    subject: renderTemplateString(subjectTemplate, vars),
+    body: renderTemplateString(bodyTemplate, vars)
+  };
+}
+
+function getPlanScopedTemplateKey(key, planScope) {
+  const cleanKey = String(key || "").trim();
+  const cleanScope = String(planScope || "all").trim().toLowerCase();
+  if (cleanScope === "core" || cleanScope === "pro") {
+    return `${cleanKey}__${cleanScope}`;
+  }
+  return cleanKey;
+}
+
+async function resolveTemplateForPlan(planId, key, fallbackSubject, fallbackBody, vars) {
+  const normalizedPlan = String(planId || "").trim().toLowerCase();
+  const planScopedKey = normalizedPlan === "core" || normalizedPlan === "pro"
+    ? `${key}__${normalizedPlan}`
+    : key;
+
+  if (planScopedKey !== key) {
+    const planScoped = await getTemplateByKey(planScopedKey);
+    if (planScoped) {
+      return {
+        subject: renderTemplateString(planScoped.subject, vars),
+        body: renderTemplateString(planScoped.body, vars)
+      };
+    }
+  }
+
+  return resolveTemplate(key, fallbackSubject, fallbackBody, vars);
+}
+
+function buildToneProfile(messages) {
+  if (!messages.length) {
+    return {
+      style: "unknown",
+      confidence: 0.2,
+      observations: ["Not enough sent follow-ups yet to infer tone."],
+      rewriteHint: "Start by sending 3-5 follow-ups so RealScoreAI can infer your writing voice."
+    };
+  }
+
+  const bodies = messages.map((item) => String(item.metadata?.body || ""));
+  const joined = bodies.join(" ").toLowerCase();
+  const totalChars = bodies.reduce((sum, body) => sum + body.length, 0);
+  const avgLength = Math.round(totalChars / bodies.length);
+  const questionCount = bodies.reduce((sum, body) => sum + (body.match(/\?/g) || []).length, 0);
+  const ctaHits = (joined.match(/\b(call|reply|schedule|tour|today|tomorrow|this week)\b/g) || []).length;
+  const softenerHits = (joined.match(/\b(if you|when you|no rush|whenever|happy to)\b/g) || []).length;
+
+  const questionRate = questionCount / bodies.length;
+  let style = "balanced";
+  if (ctaHits > softenerHits + 2) style = "direct";
+  if (softenerHits > ctaHits + 2) style = "consultative";
+
+  const confidence = Math.min(0.95, 0.35 + messages.length * 0.08);
+  const observations = [
+    `Average message length: ${avgLength} chars`,
+    `Average questions per message: ${questionRate.toFixed(1)}`,
+    `Call-to-action markers: ${ctaHits}`,
+    `Softening phrases: ${softenerHits}`
+  ];
+
+  const rewriteHint = style === "direct"
+    ? "Keep concise CTA language and add one empathy line when intent is warm/cold."
+    : style === "consultative"
+      ? "Preserve supportive tone and end with one specific next-step CTA."
+      : "Use your current balanced tone, then tailor CTA urgency by lead score.";
+
+  return { style, confidence, observations, rewriteHint };
+}
+
+async function hydrateLead(lead) {
+  const events = await listEventsForLead(lead.id, 200);
+  return {
+    ...lead,
+    events,
+    whyScore: calculateLeadScore(lead.signals).whyScore
+  };
+}
+
+async function applyAndPersistLeadEvent(lead, event, userId) {
+  const hydrated = await hydrateLead(lead);
+  const updated = applyLeadEvent(hydrated, event);
+
+  const persisted = await updateLeadSnapshot({
+    id: updated.id,
+    stage: updated.stage,
+    score: updated.score,
+    bucket: updated.bucket,
+    signals: updated.signals,
+    behaviorTrend: updated.behaviorTrend,
+    confidenceScore: updated.confidenceScore,
+    lastActivityAt: new Date().toISOString(),
+    lastNurtureEmailAt: updated.lastNurtureEmailAt,
+    lastSuggestedFollowUpAt: updated.lastSuggestedFollowUpAt
+  });
+
+  await insertEvent({
+    userId,
+    leadId: updated.id,
+    eventType: event.type === "MESSAGE_RECEIVED" ? "message_received" : "score_updated",
+    metadata: {
+      value: event.value,
+      eventType: event.type,
+      meta: event.meta || {},
+      score: updated.score,
+      bucket: updated.bucket,
+      behaviorTrend: updated.behaviorTrend,
+      confidenceScore: updated.confidenceScore
+    }
+  });
+
+  broadcastToUser(userId, "lead.updated", {
+    leadId: updated.id,
+    score: updated.score,
+    bucket: updated.bucket,
+    behaviorTrend: updated.behaviorTrend,
+    confidenceScore: updated.confidenceScore
+  });
+
+  return {
+    ...persisted,
+    whyScore: updated.whyScore,
+    aiIntentClassification: updated.aiIntentClassification
+  };
+}
+
+app.use(cors());
+app.use(express.json());
+app.use(express.static(new URL("../public", import.meta.url).pathname));
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, service: "lead-prioritization-engine" });
+});
+
+app.get("/api/plans", (_req, res) => {
+  res.json({ plans: listPlans() });
+});
+
+app.post("/api/auth/register", async (req, res) => {
+  const { name, email, password } = req.body || {};
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: "name, email, and password are required." });
+  }
+
+  const passwordCheck = validateStrongPassword(password);
+  if (!passwordCheck.valid) {
+    return res.status(400).json({ error: passwordCheck.message });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const existing = await getUserByEmail(normalizedEmail);
+  if (existing) {
+    return res.status(409).json({ error: "Account already exists. Please login." });
+  }
+
+  const user = await createUser({
+    email: normalizedEmail,
+    passwordHash: hashPassword(password),
+    name: String(name).trim(),
+    role: "beta",
+    betaFlag: true
+  });
+
+  await seedLeadsForUser(user.id);
+
+  await insertEvent({ userId: user.id, eventType: "login", metadata: { source: "register" } });
+
+  const token = createSession(user.id);
+  return res.status(201).json({ token, user: sanitizeUser(user), onboardingComplete: false, subscription: null });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ error: "email and password are required." });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const user = await getUserByEmail(normalizedEmail);
+  if (!user || user.password_hash !== hashPassword(password)) {
+    return res.status(401).json({ error: "Invalid email or password." });
+  }
+
+  const token = createSession(user.id);
+  await insertEvent({ userId: user.id, eventType: "login", metadata: { source: "password" } });
+
+  const subscriptionState = await getSubscriptionStatus(user.id);
+
+  return res.json({
+    token,
+    user: sanitizeUser(user),
+    onboardingComplete: Boolean(user.market && user.monthly_lead_volume && user.goal),
+    subscription: subscriptionState.subscription
+  });
+});
+
+app.post("/api/auth/logout", requireAuth, async (req, res) => {
+  sessions.delete(req.token);
+  await insertEvent({ userId: req.user.id, eventType: "logout", metadata: {} });
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  const subscriptionState = await getSubscriptionStatus(req.user.id);
+  res.json({
+    user: sanitizeUser(req.user),
+    onboardingComplete: Boolean(req.user.market && req.user.monthly_lead_volume && req.user.goal),
+    subscription: subscriptionState.subscription,
+    hasDashboardAccess: subscriptionState.hasAccess
+  });
+});
+
+app.get("/api/stream", requireAuth, requireActiveAccess, (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  const clientId = addStreamClient(req.user, res);
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true, clientId })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`);
+  }, 20000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    removeStreamClient(clientId);
+  });
+});
+
+app.post("/api/onboarding", requireAuth, async (req, res) => {
+  const { market, monthlyLeadVolume, goal } = req.body || {};
+  if (!market || !monthlyLeadVolume || !goal) {
+    return res.status(400).json({ error: "market, monthlyLeadVolume, and goal are required." });
+  }
+
+  const updated = await updateUserOnboarding(req.user.id, {
+    market: String(market).trim(),
+    monthlyLeadVolume: Number(monthlyLeadVolume),
+    goal: String(goal).trim()
+  });
+
+  await insertEvent({ userId: req.user.id, eventType: "settings_changed", metadata: { onboarding: true } });
+
+  res.json({ ok: true, onboarding: { market: updated.market, monthlyLeadVolume: updated.monthly_lead_volume, goal: updated.goal } });
+});
+
+app.get("/api/billing/status", requireAuth, async (req, res) => {
+  res.json(await getSubscriptionStatus(req.user.id));
+});
+
+app.post("/api/billing/start-trial", requireAuth, async (req, res) => {
+  const { planId, cardholderName, paymentMethodLast4 } = req.body || {};
+  if (!planId || !plans[planId]) {
+    return res.status(400).json({ error: "Valid planId is required." });
+  }
+  if (!cardholderName || !paymentMethodLast4) {
+    return res.status(400).json({ error: "Payment details are required to start trial." });
+  }
+
+  const trialEnds = new Date(Date.now() + plans[planId].trialDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const subscription = await upsertSubscription({
+    userId: req.user.id,
+    plan: planId,
+    status: "trialing",
+    paymentMethodLast4: String(paymentMethodLast4).slice(-4),
+    cardholderName: String(cardholderName).trim(),
+    trialEndsAt: trialEnds
+  });
+
+  await insertEvent({ userId: req.user.id, eventType: "subscription_started", metadata: { plan: planId, status: "trialing" } });
+
+  res.status(201).json({
+    ok: true,
+    subscription: {
+      planId: subscription.plan,
+      status: subscription.status,
+      trialEndsAt: subscription.trial_ends_at,
+      paymentMethodLast4: subscription.payment_method_last4,
+      cardholderName: subscription.cardholder_name
+    }
+  });
+});
+
+app.post("/api/billing/checkout", requireAuth, async (req, res) => {
+  try {
+    const { planId, customerEmail } = req.body || {};
+    const session = await createCheckoutSession({
+      planId,
+      customerEmail: customerEmail || req.user.email
+    });
+    res.json(session);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/billing/cancel", requireAuth, async (req, res) => {
+  const existing = await getSubscriptionByUserId(req.user.id);
+  if (!existing) return res.status(404).json({ error: "Subscription not found." });
+
+  await upsertSubscription({
+    userId: req.user.id,
+    plan: existing.plan,
+    status: "canceled",
+    paymentMethodLast4: existing.payment_method_last4,
+    cardholderName: existing.cardholder_name,
+    trialEndsAt: existing.trial_ends_at,
+    stripeCustomerId: existing.stripe_customer_id
+  });
+
+  await insertEvent({ userId: req.user.id, eventType: "subscription_canceled", metadata: { plan: existing.plan } });
+
+  res.json({ ok: true, message: "Subscription canceled. Access will end per billing terms." });
+});
+
+app.get("/api/ai/classify-intent", requireAuth, requireActiveAccess, (req, res) => {
+  const text = String(req.query.text || "");
+  const fallback = String(req.query.fallback || "unknown");
+  res.json(classifyIntentFromMessage(text, fallback));
+});
+
+app.get("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
+  const leads = await listLeadsByUser(req.user.id);
+  res.json({ leads: leads.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })) });
+});
+
+app.get("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  res.json({ lead: { ...lead, whyScore: calculateLeadScore(lead.signals).whyScore } });
+});
+
+app.get("/api/leads/:leadId/explanation", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const scored = calculateLeadScore(lead.signals);
+  res.json({
+    leadId: lead.id,
+    score: lead.score,
+    whyScore: scored.whyScore,
+    aiIntentClassification: lead.aiIntentClassification,
+    behaviorTrend: lead.behaviorTrend,
+    confidenceScore: lead.confidenceScore
+  });
+});
+
+app.get("/api/leads/:leadId/suggested-follow-up", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "followup_suggested", metadata: {} });
+
+  const fallback = buildSuggestedFollowUp(lead);
+  const firstName = String(lead.name || "").split(" ")[0] || "there";
+  const templateKey = lead.signals.messageIntent === "hot" ? "followup_hot" : "followup_default";
+  const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
+    firstName,
+    leadName: lead.name,
+    score: lead.score
+  });
+
+  res.json({
+    leadId: lead.id,
+    isHighPriority: lead.score >= 75,
+    score: lead.score,
+    suggestion: { subject: templated.subject, body: templated.body }
+  });
+});
+
+app.post("/api/leads/:leadId/send-follow-up", requireAuth, requireActiveAccess, async (req, res) => {
+  try {
+    const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    const defaultSuggestion = buildSuggestedFollowUp(lead);
+    const subject = String(req.body?.subject || defaultSuggestion.subject);
+    const body = String(req.body?.body || defaultSuggestion.body);
+
+    const delivery = await sendEmail({ to: lead.email, subject, text: body });
+
+    await updateLeadSnapshot({
+      ...lead,
+      lastSuggestedFollowUpAt: new Date().toISOString()
+    });
+
+    await insertEvent({
+      userId: req.user.id,
+      leadId: lead.id,
+      eventType: "followup_sent",
+      metadata: { subject, body, deliveryMode: delivery.mode }
+    });
+
+    res.json({ ok: true, leadId: lead.id, delivery });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to send follow-up email." });
+  }
+});
+
+app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
+  const {
+    name,
+    email,
+    phone = null,
+    stage = "new",
+    responseTimeMinutes = 60,
+    messageIntent = "unknown",
+    followThroughRate = 0,
+    followThroughSignal = "",
+    weeklyEngagementTouches = 0
+  } = req.body || {};
+
+  if (!name || !email) {
+    return res.status(400).json({ error: "name and email are required." });
+  }
+
+  const signals = {
+    responseTimeMinutes: Number(responseTimeMinutes),
+    messageIntent: String(messageIntent),
+    followThroughRate: normalizeFollowThroughRate(followThroughRate, followThroughSignal),
+    weeklyEngagementTouches: Number(weeklyEngagementTouches)
+  };
+
+  const scored = calculateLeadScore(signals);
+  const lead = await createLead({
+    userId: req.user.id,
+    name: String(name).trim(),
+    email: String(email).trim().toLowerCase(),
+    phone: phone ? String(phone).trim() : null,
+    status: String(stage),
+    score: scored.score,
+    bucket: scored.bucket,
+    signals,
+    behaviorTrend: "stable",
+    confidenceScore: 60,
+    lastActivityAt: new Date().toISOString()
+  });
+
+  await insertEvent({
+    userId: req.user.id,
+    leadId: lead.id,
+    eventType: "lead_created",
+    metadata: { source: "manual_create" }
+  });
+
+  res.status(201).json({ lead: { ...lead, whyScore: scored.whyScore } });
+});
+
+app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {
+  const existing = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!existing) return res.status(404).json({ error: "Lead not found" });
+
+  const merged = {
+    ...existing,
+    name: String(req.body?.name ?? existing.name).trim(),
+    email: String(req.body?.email ?? existing.email).trim().toLowerCase(),
+    phone: req.body?.phone !== undefined ? String(req.body.phone || "").trim() || null : existing.phone,
+    stage: String(req.body?.stage ?? existing.stage),
+    signals: {
+      responseTimeMinutes: Number(req.body?.responseTimeMinutes ?? existing.signals.responseTimeMinutes),
+      messageIntent: String(req.body?.messageIntent ?? existing.signals.messageIntent),
+      followThroughRate: normalizeFollowThroughRate(
+        req.body?.followThroughRate ?? existing.signals.followThroughRate,
+        req.body?.followThroughSignal ?? ""
+      ),
+      weeklyEngagementTouches: Number(req.body?.weeklyEngagementTouches ?? existing.signals.weeklyEngagementTouches)
+    }
+  };
+
+  const scored = calculateLeadScore(merged.signals);
+  const updated = await updateLeadForUser(existing.id, req.user.id, {
+    ...merged,
+    score: scored.score,
+    bucket: scored.bucket,
+    behaviorTrend: existing.behaviorTrend,
+    confidenceScore: existing.confidenceScore,
+    lastActivityAt: new Date().toISOString()
+  });
+
+  await insertEvent({
+    userId: req.user.id,
+    leadId: existing.id,
+    eventType: "lead_updated",
+    metadata: { score: scored.score, bucket: scored.bucket }
+  });
+
+  res.json({ lead: { ...updated, whyScore: scored.whyScore } });
+});
+
+app.delete("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {
+  const deleted = await deleteLeadForUser(req.params.leadId, req.user.id);
+  if (!deleted) return res.status(404).json({ error: "Lead not found" });
+
+  await insertEvent({ userId: req.user.id, leadId: req.params.leadId, eventType: "lead_deleted", metadata: {} });
+  res.json({ ok: true, leadId: req.params.leadId });
+});
+
+app.post("/api/leads/:leadId/events", requireAuth, requireActiveAccess, async (req, res) => {
+  const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const { type, value, meta = {} } = req.body || {};
+  if (!type) return res.status(400).json({ error: "Event type is required" });
+
+  const updated = await applyAndPersistLeadEvent(lead, { type, value, meta }, req.user.id);
+
+  res.json({
+    leadId: updated.id,
+    score: updated.score,
+    bucket: updated.bucket,
+    whyScore: updated.whyScore,
+    aiIntentClassification: updated.aiIntentClassification,
+    behaviorTrend: updated.behaviorTrend,
+    confidenceScore: updated.confidenceScore
+  });
+});
+
+app.post("/api/webhooks/lead-activity", requireWebhookKey, async (req, res) => {
+  const { leadId, leadEmail, eventType = "MESSAGE_RECEIVED", value = "", channel = "external", messageText = "" } = req.body || {};
+
+  let lead = null;
+  if (leadId) {
+    lead = await getLeadById(String(leadId));
+  }
+
+  if (!lead && leadEmail) {
+    const userId = String(req.body?.userId || "");
+    if (!userId) return res.status(400).json({ error: "userId is required when using leadEmail webhook lookup." });
+    lead = await getLeadByEmailForUser(String(leadEmail), userId);
+  }
+
+  if (!lead) return res.status(404).json({ error: "Lead not found for webhook payload." });
+
+  const updated = await applyAndPersistLeadEvent(
+    lead,
+    {
+      type: String(eventType),
+      value,
+      meta: { channel, messageText: String(messageText || value || "") }
+    },
+    lead.userId
+  );
+
+  await insertEvent({ userId: lead.userId, leadId: lead.id, eventType: "webhook_received", metadata: { eventType, channel } });
+
+  return res.json({
+    ok: true,
+    leadId: updated.id,
+    score: updated.score,
+    bucket: updated.bucket,
+    behaviorTrend: updated.behaviorTrend,
+    confidenceScore: updated.confidenceScore
+  });
+});
+
+app.get("/api/dashboard", requireAuth, requireActiveAccess, async (req, res) => {
+  const leads = await listLeadsByUser(req.user.id);
+
+  const todayFocus = leads.filter((lead) => lead.score >= 75).sort((a, b) => b.score - a.score).slice(0, 5);
+  const atRisk = leads.filter((lead) => lead.score >= 50 && lead.score < 75);
+  const lowValue = leads.filter((lead) => lead.score < 50);
+
+  await insertEvent({ userId: req.user.id, eventType: "dashboard_viewed", metadata: { todayFocus: todayFocus.length, atRisk: atRisk.length, lowValue: lowValue.length } });
+
+  res.json({
+    todayFocus: todayFocus.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
+    atRisk: atRisk.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
+    lowValue: lowValue.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore }))
+  });
+});
+
+app.get("/api/usage", requireAuth, requireActiveAccess, async (req, res) => {
+  res.json({ userId: req.user.id, usage: await getUsageByUser(req.user.id) });
+});
+
+app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, res) => {
+  const sentEvents = await listUserEventsByType(req.user.id, "followup_sent", 50);
+  const profile = buildToneProfile(sentEvents);
+  res.json({
+    userId: req.user.id,
+    sampleSize: sentEvents.length,
+    profile
+  });
+});
+
+app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async (req, res) => {
+  try {
+    const leads = await listLeadsByUser(req.user.id);
+    const movedLeadIds = [];
+    const emailedLeadIds = [];
+
+    for (const lead of leads) {
+      if (lead.score < 50) {
+        if (lead.stage !== "nurture") {
+          lead.stage = "nurture";
+          movedLeadIds.push(lead.id);
+          await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "auto_nurture_moved", metadata: {} });
+        }
+
+        const lastSent = lead.lastNurtureEmailAt ? new Date(lead.lastNurtureEmailAt).getTime() : 0;
+        const shouldSend = !lastSent || Date.now() - lastSent >= 30 * 24 * 60 * 60 * 1000;
+
+        if (shouldSend) {
+          const fallback = buildMonthlyNurtureEmail(lead);
+          const firstName = String(lead.name || "").split(" ")[0] || "there";
+          const templated = await resolveTemplateForPlan(req.subscription?.planId, "nurture_monthly", fallback.subject, fallback.text, {
+            firstName,
+            leadName: lead.name
+          });
+          await sendEmail({ to: lead.email, subject: templated.subject, text: templated.body });
+          lead.lastNurtureEmailAt = new Date().toISOString();
+          emailedLeadIds.push(lead.id);
+          await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "nurture_email_sent", metadata: {} });
+        }
+
+        await updateLeadSnapshot(lead);
+      }
+    }
+
+    broadcastToUser(req.user.id, "dashboard.refresh", {
+      reason: "auto_nurture_run",
+      movedCount: movedLeadIds.length,
+      emailedCount: emailedLeadIds.length
+    });
+
+    res.json({
+      job: "auto_nurture_low_score",
+      threshold: 50,
+      movedLeadIds,
+      emailedLeadIds,
+      movedCount: movedLeadIds.length,
+      emailedCount: emailedLeadIds.length
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Auto-nurture failed." });
+  }
+});
+
+app.post("/api/automation/weekly-reactivation", requireAuth, requireActiveAccess, async (req, res) => {
+  const leads = await listLeadsByUser(req.user.id);
+  const reminders = leads
+    .filter((lead) => lead.score >= 50 && lead.score < 75)
+    .filter((lead) => lead.lastActivityAt && Date.now() - new Date(lead.lastActivityAt).getTime() >= 5 * 24 * 60 * 60 * 1000)
+    .map((lead) => ({ id: lead.id, name: lead.name, score: lead.score }));
+
+  for (const reminder of reminders) {
+    await insertEvent({ userId: req.user.id, leadId: reminder.id, eventType: "reactivation_sent", metadata: {} });
+  }
+
+  res.json({ job: "weekly_reactivation_reminder", reminders, count: reminders.length });
+});
+
+app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async (req, res) => {
+  try {
+    const leads = await listLeadsByUser(req.user.id);
+    const top = leads.slice().sort((a, b) => b.score - a.score).slice(0, 5).map((lead) => ({
+      id: lead.id,
+      name: lead.name,
+      score: lead.score,
+      reason: calculateLeadScore(lead.signals).whyScore.summary
+    }));
+
+    const fallback = buildDailyDigestEmail(req.user.name, top);
+    const leadList = top.map((lead, idx) => `${idx + 1}. ${lead.name} (Score ${lead.score}) - ${lead.reason}`).join("\n");
+    const firstName = String(req.user.name || "").split(" ")[0] || "there";
+    const templated = await resolveTemplateForPlan(req.subscription?.planId, "digest_daily", fallback.subject, fallback.text, {
+      firstName,
+      leadList
+    });
+    const delivery = await sendEmail({ to: req.user.email, subject: templated.subject, text: templated.body });
+
+    await insertEvent({ userId: req.user.id, eventType: "digest_sent", metadata: { leadCount: top.length, mode: delivery.mode } });
+
+    res.json({ job: "daily_focus_digest", to: req.user.email, leadCount: top.length, leads: top, delivery });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Daily digest failed." });
+  }
+});
+
+app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, async (req, res) => {
+  const now = Date.now();
+  const leads = await listLeadsByUser(req.user.id);
+  const due = [];
+
+  for (const lead of leads) {
+    if (lead.score < 50) continue;
+
+    const cadenceMs = lead.score >= 75 ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
+    const cadenceLabel = lead.score >= 75 ? "24h" : "72h";
+    const baseline = lead.lastSuggestedFollowUpAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt;
+    const baselineMs = baseline ? new Date(baseline).getTime() : 0;
+    const isDue = !baselineMs || now - baselineMs >= cadenceMs;
+
+    if (!isDue) continue;
+
+    const fallback = buildSuggestedFollowUp(lead);
+    const firstName = String(lead.name || "").split(" ")[0] || "there";
+    const templateKey = lead.signals.messageIntent === "hot" ? "followup_hot" : "followup_default";
+    const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
+      firstName,
+      leadName: lead.name,
+      score: lead.score
+    });
+
+    due.push({
+      leadId: lead.id,
+      leadName: lead.name,
+      score: lead.score,
+      cadence: cadenceLabel,
+      suggestion: templated
+    });
+
+    await updateLeadSnapshot({
+      ...lead,
+      lastSuggestedFollowUpAt: new Date().toISOString()
+    });
+
+    await insertEvent({
+      userId: req.user.id,
+      leadId: lead.id,
+      eventType: "followup_cadence_due",
+      metadata: { cadence: cadenceLabel, score: lead.score }
+    });
+  }
+
+  if (due.length) {
+    broadcastToUser(req.user.id, "dashboard.refresh", {
+      reason: "followup_cadence_run",
+      dueCount: due.length
+    });
+  }
+
+  res.json({
+    job: "followup_cadence",
+    dueCount: due.length,
+    due
+  });
+});
+
+app.post("/api/admin/invites", requireAdminKey, (req, res) => {
+  const { email, name = "" } = req.body || {};
+  if (!email) return res.status(400).json({ error: "email is required." });
+
+  const cleanEmail = String(email).trim().toLowerCase();
+  const inviteId = crypto.randomBytes(12).toString("hex");
+  const invite = {
+    id: inviteId,
+    email: cleanEmail,
+    name: String(name).trim(),
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    inviteUrl: `http://localhost:3000/auth.html?email=${encodeURIComponent(cleanEmail)}`
+  };
+
+  invites.set(invite.id, invite);
+  return res.status(201).json({ ok: true, invite });
+});
+
+app.get("/api/admin/invites", requireAdminKey, (_req, res) => {
+  const list = [...invites.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  res.json({ invites: list });
+});
+
+app.post("/api/admin/invites/:inviteId/send", requireAdminKey, (req, res) => {
+  const invite = invites.get(req.params.inviteId);
+  if (!invite) return res.status(404).json({ error: "Invite not found." });
+
+  invite.status = "sent";
+  invite.sentAt = new Date().toISOString();
+  invites.set(invite.id, invite);
+  return res.json({ ok: true, invite });
+});
+
+app.get("/api/admin/metrics", requireAdminKey, async (_req, res) => {
+  res.json(await getAdminMetrics());
+});
+
+app.get("/api/admin/email/status", requireAdminKey, async (_req, res) => {
+  res.json({ smtp: getSmtpStatus() });
+});
+
+app.post("/api/admin/email/test", requireAdminKey, async (req, res) => {
+  try {
+    const to = String(req.body?.to || "").trim();
+    if (!to) {
+      return res.status(400).json({ error: "to is required." });
+    }
+
+    const result = await sendEmail({
+      to,
+      subject: "RealScoreAI SMTP test",
+      text: [
+        "This is a RealScoreAI SMTP test email.",
+        "",
+        `Environment: ${process.env.NODE_ENV || "development"}`,
+        `Timestamp: ${new Date().toISOString()}`
+      ].join("\n")
+    });
+
+    res.json({ ok: true, delivery: result, smtp: getSmtpStatus() });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to send test email." });
+  }
+});
+
+app.get("/api/admin/templates", requireAdminKey, async (_req, res) => {
+  const requestedPlan = String(_req.query.plan || "all").trim().toLowerCase();
+  const templates = await listTemplates();
+  if (requestedPlan === "all") {
+    return res.json({ templates });
+  }
+
+  const suffix = `__${requestedPlan}`;
+  const filtered = templates
+    .filter((tpl) => tpl.key.endsWith(suffix))
+    .map((tpl) => ({ ...tpl, baseKey: tpl.key.slice(0, -suffix.length), planScope: requestedPlan }));
+  return res.json({ templates: filtered });
+});
+
+app.put("/api/admin/templates/:key", requireAdminKey, async (req, res) => {
+  const baseKey = String(req.params.key || "").trim();
+  const subject = String(req.body?.subject || "").trim();
+  const body = String(req.body?.body || "").trim();
+  const planScope = String(req.body?.planScope || "all").trim().toLowerCase();
+  const key = getPlanScopedTemplateKey(baseKey, planScope);
+
+  if (!baseKey || !subject || !body) {
+    return res.status(400).json({ error: "key, subject, and body are required." });
+  }
+
+  const template = await upsertTemplate({ key, subject, body });
+  res.json({ template: { ...template, baseKey, planScope } });
+});
+
+app.post("/api/admin/automation/beta-ending-reminders", requireAdminKey, async (_req, res) => {
+  const users = await listTrialingUsers();
+  const now = Date.now();
+  const sent = [];
+  const skipped = [];
+
+  for (const user of users) {
+    if (!user.beta_flag) {
+      skipped.push({ userId: user.user_id, reason: "not_beta_flagged" });
+      continue;
+    }
+
+    const trialEndsAt = new Date(user.trial_ends_at).getTime();
+    if (Number.isNaN(trialEndsAt) || trialEndsAt <= now) {
+      skipped.push({ userId: user.user_id, reason: "trial_expired_or_invalid" });
+      continue;
+    }
+
+    const msLeft = trialEndsAt - now;
+    const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+    const targetDays = daysLeft <= 1 ? 1 : daysLeft <= 7 ? 7 : 0;
+
+    if (!targetDays) {
+      skipped.push({ userId: user.user_id, reason: "outside_reminder_window" });
+      continue;
+    }
+
+    const eventType = targetDays === 1 ? "beta_reminder_1d" : "beta_reminder_7d";
+    const trialIso = new Date(user.trial_ends_at).toISOString();
+    const alreadySent = await hasUserEventForTrial(user.user_id, eventType, trialIso);
+
+    if (alreadySent) {
+      skipped.push({ userId: user.user_id, reason: "already_sent_for_trial" });
+      continue;
+    }
+
+    const email = buildBetaEndingReminderEmail({
+      userName: user.name,
+      plan: user.plan,
+      daysLeft: targetDays
+    });
+    const firstName = String(user.name || "").split(" ")[0] || "there";
+    const templated = await resolveTemplateForPlan(user.plan, "beta_ending", email.subject, email.text, {
+      firstName,
+      plan: user.plan,
+      daysLeft: targetDays
+    });
+
+    const delivery = await sendEmail({
+      to: user.email,
+      subject: templated.subject,
+      text: templated.body
+    });
+
+    await insertEvent({
+      userId: user.user_id,
+      eventType,
+      metadata: {
+        plan: user.plan,
+        daysLeft: targetDays,
+        trialEndsAt: trialIso,
+        deliveryMode: delivery.mode
+      }
+    });
+
+    sent.push({
+      userId: user.user_id,
+      email: user.email,
+      daysLeft: targetDays,
+      mode: delivery.mode
+    });
+  }
+
+  res.json({
+    job: "beta_ending_reminders",
+    totalTrialing: users.length,
+    sentCount: sent.length,
+    skippedCount: skipped.length,
+    sent,
+    skipped
+  });
+});
+
+app.get("/api/admin/export/usage.csv", requireAdminKey, async (_req, res) => {
+  const metrics = await getAdminMetrics();
+  const rows = [
+    {
+      total_users: metrics.totalUsers,
+      active_users_7d: metrics.activeUsers7d,
+      total_leads: metrics.totalLeads,
+      total_events: metrics.totalEvents,
+      avg_score: metrics.avgScore,
+      leads_per_user: metrics.leadsPerUser
+    }
+  ];
+
+  const csv = toCsv(rows, ["total_users", "active_users_7d", "total_leads", "total_events", "avg_score", "leads_per_user"]);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="usage-export.csv"');
+  res.send(csv);
+});
+
+app.get("/api/admin/export/leads.csv", requireAdminKey, async (_req, res) => {
+  const allLeads = [];
+  const leads = await listAllLeads();
+  for (const lead of leads) {
+    allLeads.push({
+      lead_id: lead.id,
+      user_id: lead.userId,
+      lead_name: lead.name,
+      email: lead.email,
+      status: lead.stage,
+      score: lead.score,
+      bucket: lead.bucket,
+      behavior_trend: lead.behaviorTrend,
+      confidence_score: lead.confidenceScore,
+      message_intent: lead.signals.messageIntent,
+      response_time_minutes: lead.signals.responseTimeMinutes,
+      follow_through_rate: lead.signals.followThroughRate,
+      weekly_engagement_touches: lead.signals.weeklyEngagementTouches,
+      created_at: lead.createdAt,
+      updated_at: lead.updatedAt
+    });
+  }
+
+  const csv = toCsv(allLeads, [
+    "lead_id",
+    "user_id",
+    "lead_name",
+    "email",
+    "status",
+    "score",
+    "bucket",
+    "behavior_trend",
+    "confidence_score",
+    "message_intent",
+    "response_time_minutes",
+    "follow_through_rate",
+    "weekly_engagement_touches",
+    "created_at",
+    "updated_at"
+  ]);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="leads-export.csv"');
+  res.send(csv);
+});
+
+async function start() {
+  if (isProduction) {
+    const required = [
+      "DATABASE_URL",
+      "ADMIN_KEY",
+      "WEBHOOK_KEY",
+      "STRIPE_SECRET_KEY",
+      "SMTP_HOST",
+      "SMTP_USER",
+      "SMTP_PASS"
+    ];
+    const missing = required.filter((key) => !process.env[key]);
+    if (missing.length > 0) {
+      throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
+    }
+  }
+
+  await runSchema();
+  app.listen(PORT, () => {
+    console.log(`Lead engine running on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((error) => {
+  console.error("Failed to start server:", error.message);
+  process.exit(1);
+});

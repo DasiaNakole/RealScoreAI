@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col">
+      <section class="panel form-panel">
+        <p class="badge">Billing Required</p>
+        <h1>Start your 30-day trial</h1>
+        <p class="meta">Selected plan: <span id="payment-plan"></span></p>
+        <form id="payment-form">
+          <label>Cardholder name <input name="cardholderName" required /></label>
+          <label>Card number (demo)
+            <input name="cardNumber" inputmode="numeric" minlength="12" maxlength="19" required />
+          </label>
+          <button class="btn btn-primary" type="submit">Activate trial and enter dashboard</button>
+        </form>
+        <p class="meta" id="payment-message"></p>
+      </section>
+    </main>
+
+    <script src="payment.js"></script>
+  </body>
+</html>

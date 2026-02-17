@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Beta Admin | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col admin-layout">
+      <section class="panel form-panel">
+        <p class="badge">Beta Admin</p>
+        <h1>Invite agents, templates, and exports</h1>
+        <label>Admin key
+          <input id="admin-key" placeholder="Enter admin key" />
+        </label>
+        <div class="hero-actions">
+          <button id="save-admin-key" class="btn btn-secondary">Save key</button>
+          <button id="refresh-invites" class="btn btn-secondary">Refresh invites</button>
+          <button id="run-beta-reminders" class="btn btn-primary">Run beta reminders now</button>
+        </div>
+        <p class="meta" id="admin-message"></p>
+      </section>
+
+      <section class="panel form-panel">
+        <h2>Create invite</h2>
+        <form id="invite-form">
+          <label>Name (optional)
+            <input name="name" placeholder="Jane Agent" />
+          </label>
+          <label>Email
+            <input name="email" type="email" required placeholder="agent@example.com" />
+          </label>
+          <button class="btn btn-primary" type="submit">Create invite</button>
+        </form>
+      </section>
+
+      <section class="panel form-panel">
+        <h2>Template Editor</h2>
+        <form id="template-form">
+          <label>Template key
+            <select id="template-key" required>
+              <option value="followup_hot">followup_hot</option>
+              <option value="followup_default">followup_default</option>
+              <option value="nurture_monthly">nurture_monthly</option>
+              <option value="digest_daily">digest_daily</option>
+              <option value="beta_ending">beta_ending</option>
+            </select>
+          </label>
+          <label>Plan scope
+            <select id="template-plan-scope" required>
+              <option value="all">all (shared)</option>
+              <option value="core">core only</option>
+              <option value="pro">pro only</option>
+            </select>
+          </label>
+          <label>Subject
+            <input id="template-subject" required />
+          </label>
+          <label>Body
+            <textarea id="template-body" rows="8" required></textarea>
+          </label>
+          <p class="meta">Placeholders: {{firstName}}, {{leadName}}, {{score}}, {{plan}}, {{daysLeft}}, {{leadList}}</p>
+          <button class="btn btn-primary" type="submit">Save template</button>
+        </form>
+      </section>
+
+      <section class="panel form-panel">
+        <h2>Export CSV</h2>
+        <div class="hero-actions">
+          <button id="export-usage" class="btn btn-secondary">Download usage CSV</button>
+          <button id="export-leads" class="btn btn-secondary">Download leads CSV</button>
+        </div>
+      </section>
+
+      <section class="panel form-panel">
+        <h2>Email Delivery Test</h2>
+        <div class="hero-actions">
+          <button id="check-email-status" class="btn btn-secondary" type="button">Check SMTP status</button>
+        </div>
+        <form id="email-test-form">
+          <label>Send test email to
+            <input id="email-test-to" type="email" required placeholder="you@example.com" />
+          </label>
+          <button class="btn btn-primary" type="submit">Send test email</button>
+        </form>
+      </section>
+
+      <section class="panel form-panel">
+        <h2>Invites</h2>
+        <div id="invite-list" class="invite-list"></div>
+      </section>
+    </main>
+
+    <script src="admin.js"></script>
+  </body>
+</html>
