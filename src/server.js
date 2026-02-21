@@ -36,6 +36,7 @@ import {
   listTrackingLinksByLeadForUser,
   listUserEventsByType,
   touchUser,
+  updateUserPasswordHash,
   updateLeadForUser,
   updateLeadSnapshot,
   updateUserOnboarding,
@@ -53,6 +54,7 @@ const WEBHOOK_KEY = process.env.WEBHOOK_KEY || (!isProduction ? "lead-webhook-20
 const sessions = new Map();
 const invites = new Map();
 const streamClients = new Map();
+const passwordResetTokens = new Map();
 
 const SEED_LEADS = [
   {
@@ -532,6 +534,75 @@ app.post("/api/auth/login", async (req, res) => {
     onboardingComplete: Boolean(user.market && user.monthly_lead_volume && user.goal),
     subscription: subscriptionState.subscription
   });
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "email is required." });
+
+  const user = await getUserByEmail(email);
+  if (user) {
+    const token = crypto.randomBytes(24).toString("hex");
+    const expiresAt = Date.now() + 60 * 60 * 1000;
+    passwordResetTokens.set(token, { userId: user.id, expiresAt });
+
+    const resetLink = `${APP_URL}/reset-password.html?token=${encodeURIComponent(token)}`;
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your RealScoreAI password",
+      text: [
+        `Hi ${String(user.name || "there").split(" ")[0]},`,
+        "",
+        "Use this link to reset your password:",
+        resetLink,
+        "",
+        "This link expires in 60 minutes.",
+        "",
+        "- RealScoreAI"
+      ].join("\n")
+    });
+
+    await insertEvent({
+      userId: user.id,
+      eventType: "password_reset_requested",
+      metadata: { via: "forgot_password" }
+    });
+  }
+
+  return res.json({
+    ok: true,
+    message: "If that email exists, a password reset link has been sent."
+  });
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const token = String(req.body?.token || "").trim();
+  const newPassword = String(req.body?.password || "");
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: "token and password are required." });
+  }
+
+  const record = passwordResetTokens.get(token);
+  if (!record || Date.now() > record.expiresAt) {
+    passwordResetTokens.delete(token);
+    return res.status(400).json({ error: "Reset token is invalid or expired." });
+  }
+
+  const passwordCheck = validateStrongPassword(newPassword);
+  if (!passwordCheck.valid) {
+    return res.status(400).json({ error: passwordCheck.message });
+  }
+
+  await updateUserPasswordHash(record.userId, hashPassword(newPassword));
+  passwordResetTokens.delete(token);
+
+  await insertEvent({
+    userId: record.userId,
+    eventType: "password_reset_completed",
+    metadata: {}
+  });
+
+  return res.json({ ok: true, message: "Password updated. You can now login." });
 });
 
 app.post("/api/auth/logout", requireAuth, async (req, res) => {

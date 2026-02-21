@@ -64,6 +64,10 @@ export async function touchUser(userId) {
   await pool.query(`update users set last_active_at = now() where id = $1`, [userId]);
 }
 
+export async function updateUserPasswordHash(userId, passwordHash) {
+  await pool.query(`update users set password_hash = $2, last_active_at = now() where id = $1`, [userId, passwordHash]);
+}
+
 export async function updateUserOnboarding(userId, { market, monthlyLeadVolume, goal }) {
   const result = await pool.query(
     `update users

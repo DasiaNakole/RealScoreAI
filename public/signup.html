@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Account | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col">
+      <section class="panel form-panel">
+        <h1>Create account</h1>
+        <p class="meta">Plan: <span id="selected-plan">PRO</span></p>
+        <form id="register-form">
+          <label>Name <input name="name" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Password <input name="password" type="password" required /></label>
+          <p class="meta" id="password-strength-signup"></p>
+          <label>Confirm Password <input name="confirmPassword" type="password" required /></label>
+          <p class="meta" id="password-match-signup"></p>
+          <p class="meta">Strong password: 10+ chars, uppercase, lowercase, number, special character.</p>
+          <button class="btn btn-primary" type="submit">Create account</button>
+        </form>
+        <div class="hero-actions">
+          <a class="btn btn-secondary" href="login.html">Already have an account? Login</a>
+        </div>
+        <p class="meta" id="auth-message"></p>
+      </section>
+    </main>
+    <script src="signup.js"></script>
+  </body>
+</html>

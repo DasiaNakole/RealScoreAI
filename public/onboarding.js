@@ -2,7 +2,7 @@ const TOKEN_KEY = 'authToken';
 const token = localStorage.getItem(TOKEN_KEY);
 
 if (!token) {
-  window.location.href = '/auth.html';
+  window.location.href = '/login.html';
 }
 
 function setMessage(msg, isError = false) {

@@ -2,7 +2,7 @@ const TOKEN_KEY = 'authToken';
 const token = localStorage.getItem(TOKEN_KEY);
 
 if (!token) {
-  window.location.href = '/auth.html';
+  window.location.href = '/login.html';
 }
 
 let selectedLeadId = null;
@@ -44,11 +44,17 @@ async function authedFetch(path, options = {}) {
     }
   });
 
-  const data = await response.json();
+  const raw = await response.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = {};
+  }
   if (!response.ok) {
     if (response.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
-      window.location.href = '/auth.html';
+      window.location.href = '/login.html';
       return null;
     }
 
@@ -255,6 +261,13 @@ function renderLeadManagerList(leads) {
 
       try {
         await authedFetch(`/api/leads/${id}`, { method: 'DELETE' });
+        if (selectedLeadId === id) {
+          selectedLeadId = null;
+          document.getElementById('followup-subject').value = '';
+          document.getElementById('followup-body').value = '';
+          setFollowUpStatus('Lead deleted. Select another lead.');
+          setTrackingUrl('');
+        }
         setLeadManagerStatus('Lead deleted.');
         await loadDashboard();
       } catch (error) {

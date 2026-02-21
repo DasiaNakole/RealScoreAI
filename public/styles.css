@@ -228,6 +228,11 @@ h3 {
   gap: 16px;
 }
 
+.portal-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
 .lead-list {
   list-style: none;
   padding: 0;

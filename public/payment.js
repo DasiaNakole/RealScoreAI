@@ -3,7 +3,7 @@ const PLAN_KEY = 'selectedPlan';
 
 const token = localStorage.getItem(TOKEN_KEY);
 if (!token) {
-  window.location.href = '/auth.html';
+  window.location.href = '/login.html';
 }
 
 const selectedPlan = localStorage.getItem(PLAN_KEY) || 'pro';
@@ -42,7 +42,7 @@ document.getElementById('payment-form').addEventListener('submit', async (event)
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to activate trial');
 
-    window.location.href = '/app.html';
+    window.location.href = '/portal.html';
   } catch (error) {
     setMessage(error.message, true);
   }
