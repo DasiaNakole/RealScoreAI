@@ -21,6 +21,18 @@ const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   offer_submitted: 0.97
 };
 
+const PIPELINE_STEPS = [
+  'consultation',
+  'exclusive_buyer_agreement',
+  'preapproval',
+  'home_search',
+  'schedule_visits',
+  'home_inspection',
+  'appraisal',
+  'sign_documents',
+  'closing'
+];
+
 function rateFromSignal(signal) {
   return FOLLOW_THROUGH_SIGNAL_TO_RATE[signal] ?? FOLLOW_THROUGH_SIGNAL_TO_RATE.none;
 }
@@ -33,6 +45,41 @@ function signalFromRate(rate) {
   if (value >= 0.5) return 'docs_shared';
   if (value >= 0.25) return 'replied';
   return 'none';
+}
+
+function collectPipelineProgressFromForm() {
+  const progress = {};
+  for (const step of PIPELINE_STEPS) {
+    progress[step] = Boolean(document.getElementById(`pipeline-${step}`)?.checked);
+  }
+  return progress;
+}
+
+function applyPipelineProgressToForm(progress = {}) {
+  for (const step of PIPELINE_STEPS) {
+    const node = document.getElementById(`pipeline-${step}`);
+    if (node) node.checked = Boolean(progress[step]);
+  }
+}
+
+function inferStageFromPipeline(progress = {}) {
+  let current = 'consultation';
+  for (const step of PIPELINE_STEPS) {
+    if (progress[step]) current = step;
+  }
+  return current;
+}
+
+function normalizeLeadStage(stage) {
+  const value = String(stage || '').trim().toLowerCase();
+  const legacyMap = {
+    new: 'consultation',
+    qualified: 'exclusive_buyer_agreement',
+    touring: 'schedule_visits',
+    closed: 'closing'
+  };
+  if (legacyMap[value]) return legacyMap[value];
+  return value || 'consultation';
 }
 
 async function authedFetch(path, options = {}) {
@@ -200,7 +247,8 @@ function clearLeadForm() {
   document.getElementById('lead-name').value = '';
   document.getElementById('lead-email').value = '';
   document.getElementById('lead-phone').value = '';
-  document.getElementById('lead-stage').value = 'new';
+  document.getElementById('lead-stage').value = 'consultation';
+  applyPipelineProgressToForm({});
   document.getElementById('lead-response-time').value = '60';
   document.getElementById('lead-intent').value = 'unknown';
   document.getElementById('lead-follow-through').value = '0';
@@ -212,7 +260,8 @@ function fillLeadForm(lead) {
   document.getElementById('lead-name').value = lead.name || '';
   document.getElementById('lead-email').value = lead.email || '';
   document.getElementById('lead-phone').value = lead.phone || '';
-  document.getElementById('lead-stage').value = lead.stage || 'new';
+  document.getElementById('lead-stage').value = normalizeLeadStage(lead.stage);
+  applyPipelineProgressToForm(lead.pipelineProgress || {});
   document.getElementById('lead-response-time').value = String(lead.signals?.responseTimeMinutes ?? 60);
   document.getElementById('lead-intent').value = lead.signals?.messageIntent || 'unknown';
   const followSignal = signalFromRate(lead.signals?.followThroughRate ?? 0);
@@ -231,12 +280,14 @@ function renderLeadManagerList(leads) {
   }
 
   for (const lead of leads) {
+    const preapproved = Boolean(lead.pipelineProgress?.preapproval);
     const card = document.createElement('article');
     card.className = 'invite-item';
     card.innerHTML = `
       <strong>${lead.name}</strong>
       <span class="meta">${lead.email} | ${lead.stage}</span>
       <span class="meta">Score: ${lead.score} | Bucket: ${lead.bucket}</span>
+      <span class="meta">Preapproval: ${preapproved ? 'Complete' : 'Pending'}</span>
       <div class="hero-actions">
         <button class="btn btn-secondary" data-edit-lead="${lead.id}">Edit</button>
         <button class="btn btn-secondary" data-delete-lead="${lead.id}">Delete</button>
@@ -359,17 +410,30 @@ document.getElementById('lead-form').addEventListener('submit', async (event) =>
   event.preventDefault();
 
   const id = document.getElementById('lead-id').value.trim();
+  const pipelineProgress = collectPipelineProgressFromForm();
+  const inferredStage = inferStageFromPipeline(pipelineProgress);
+  const stageValue = normalizeLeadStage(document.getElementById('lead-stage').value || inferredStage);
   const payload = {
     name: document.getElementById('lead-name').value.trim(),
     email: document.getElementById('lead-email').value.trim(),
     phone: document.getElementById('lead-phone').value.trim(),
-    stage: document.getElementById('lead-stage').value,
+    stage: stageValue,
+    pipelineProgress,
     responseTimeMinutes: Number(document.getElementById('lead-response-time').value || 0),
     messageIntent: document.getElementById('lead-intent').value,
     followThroughSignal: document.getElementById('lead-follow-through-signal').value,
     followThroughRate: rateFromSignal(document.getElementById('lead-follow-through-signal').value),
     weeklyEngagementTouches: Number(document.getElementById('lead-touches').value || 0)
   };
+
+  const stagePastPreapproval = PIPELINE_STEPS.indexOf(stageValue) > PIPELINE_STEPS.indexOf('preapproval');
+  if (stagePastPreapproval && !pipelineProgress.preapproval) {
+    const proceed = confirm('Preapproval is not checked, but lead stage is beyond preapproval. Continue anyway?');
+    if (!proceed) {
+      setLeadManagerStatus('Save canceled. Mark preapproval or choose an earlier stage.', true);
+      return;
+    }
+  }
 
   try {
     if (id) {
@@ -505,6 +569,14 @@ document.getElementById('insert-tracking-link').addEventListener('click', () => 
   bodyNode.value = `${bodyNode.value}${spacer}Property link: ${lastTrackingUrl}`.trim();
   setTrackingStatus('Tracked link inserted into follow-up message.');
 });
+
+for (const step of PIPELINE_STEPS) {
+  const node = document.getElementById(`pipeline-${step}`);
+  node?.addEventListener('change', () => {
+    const progress = collectPipelineProgressFromForm();
+    document.getElementById('lead-stage').value = inferStageFromPipeline(progress);
+  });
+}
 
 clearLeadForm();
 renderCadenceQueue();

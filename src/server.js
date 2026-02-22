@@ -299,6 +299,27 @@ function normalizeFollowThroughRate(rawRate, rawSignal) {
   return FOLLOW_THROUGH_SIGNAL_TO_RATE.none;
 }
 
+const LEAD_PIPELINE_STEPS = [
+  "consultation",
+  "exclusive_buyer_agreement",
+  "preapproval",
+  "home_search",
+  "schedule_visits",
+  "home_inspection",
+  "appraisal",
+  "sign_documents",
+  "closing"
+];
+
+function normalizePipelineProgress(rawProgress) {
+  const source = rawProgress && typeof rawProgress === "object" ? rawProgress : {};
+  const result = {};
+  for (const step of LEAD_PIPELINE_STEPS) {
+    result[step] = Boolean(source[step]);
+  }
+  return result;
+}
+
 function renderTemplateString(template, vars) {
   let output = String(template || "");
   for (const [key, value] of Object.entries(vars || {})) {
@@ -406,6 +427,7 @@ async function applyAndPersistLeadEvent(lead, event, userId) {
     signals: updated.signals,
     behaviorTrend: updated.behaviorTrend,
     confidenceScore: updated.confidenceScore,
+    pipelineProgress: normalizePipelineProgress(updated.pipelineProgress || lead.pipelineProgress),
     lastActivityAt: new Date().toISOString(),
     lastNurtureEmailAt: updated.lastNurtureEmailAt,
     lastSuggestedFollowUpAt: updated.lastSuggestedFollowUpAt
@@ -865,12 +887,13 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     name,
     email,
     phone = null,
-    stage = "new",
+    stage = "consultation",
     responseTimeMinutes = 60,
     messageIntent = "unknown",
     followThroughRate = 0,
     followThroughSignal = "",
-    weeklyEngagementTouches = 0
+    weeklyEngagementTouches = 0,
+    pipelineProgress = {}
   } = req.body || {};
 
   if (!name || !email) {
@@ -896,6 +919,7 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     signals,
     behaviorTrend: "stable",
     confidenceScore: 60,
+    pipelineProgress: normalizePipelineProgress(pipelineProgress),
     lastActivityAt: new Date().toISOString()
   });
 
@@ -919,6 +943,7 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     email: String(req.body?.email ?? existing.email).trim().toLowerCase(),
     phone: req.body?.phone !== undefined ? String(req.body.phone || "").trim() || null : existing.phone,
     stage: String(req.body?.stage ?? existing.stage),
+    pipelineProgress: normalizePipelineProgress(req.body?.pipelineProgress ?? existing.pipelineProgress),
     signals: {
       responseTimeMinutes: Number(req.body?.responseTimeMinutes ?? existing.signals.responseTimeMinutes),
       messageIntent: String(req.body?.messageIntent ?? existing.signals.messageIntent),
@@ -937,6 +962,7 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     bucket: scored.bucket,
     behaviorTrend: existing.behaviorTrend,
     confidenceScore: existing.confidenceScore,
+    pipelineProgress: merged.pipelineProgress,
     lastActivityAt: new Date().toISOString()
   });
 

@@ -29,12 +29,15 @@ create table if not exists leads (
   weekly_engagement_touches integer not null default 0,
   behavior_trend text not null default 'stable',
   confidence_score numeric(5,2) not null default 50,
+  pipeline_progress jsonb not null default '{}'::jsonb,
   last_activity_at timestamptz,
   last_nurture_email_at timestamptz,
   last_suggested_follow_up_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table leads add column if not exists pipeline_progress jsonb not null default '{}'::jsonb;
 
 create index if not exists idx_leads_user_id on leads(user_id);
 create index if not exists idx_leads_score on leads(score desc);

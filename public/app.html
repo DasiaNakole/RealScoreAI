@@ -44,13 +44,30 @@
           <label>Phone <input id="lead-phone" /></label>
           <label>Status
             <select id="lead-stage">
-              <option value="new">new</option>
-              <option value="qualified">qualified</option>
-              <option value="touring">touring</option>
-              <option value="nurture">nurture</option>
-              <option value="closed">closed</option>
+              <option value="consultation">Consultation</option>
+              <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
+              <option value="preapproval">Preapproval</option>
+              <option value="home_search">Home Search</option>
+              <option value="schedule_visits">Schedule Visits</option>
+              <option value="home_inspection">Home Inspection</option>
+              <option value="appraisal">Appraisal</option>
+              <option value="sign_documents">Sign Documents</option>
+              <option value="closing">Closing</option>
+              <option value="nurture">Nurture</option>
             </select>
           </label>
+          <fieldset class="pipeline-checklist">
+            <legend>Lead Progress Checklist</legend>
+            <label><input type="checkbox" id="pipeline-consultation" /> Consultation</label>
+            <label><input type="checkbox" id="pipeline-exclusive_buyer_agreement" /> Exclusive Buyer Agreement (EBA)</label>
+            <label class="critical-step"><input type="checkbox" id="pipeline-preapproval" /> Preapproval (CRUCIAL)</label>
+            <label><input type="checkbox" id="pipeline-home_search" /> Home Search</label>
+            <label><input type="checkbox" id="pipeline-schedule_visits" /> Schedule Visits</label>
+            <label><input type="checkbox" id="pipeline-home_inspection" /> Home Inspection</label>
+            <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
+            <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
+            <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
+          </fieldset>
           <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
           <label>Buyer Intent
             <select id="lead-intent">

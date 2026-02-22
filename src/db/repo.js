@@ -18,6 +18,7 @@ function mapLead(row) {
     },
     behaviorTrend: row.behavior_trend,
     confidenceScore: Number(row.confidence_score),
+    pipelineProgress: row.pipeline_progress || {},
     lastActivityAt: row.last_activity_at,
     lastNurtureEmailAt: row.last_nurture_email_at,
     lastSuggestedFollowUpAt: row.last_suggested_follow_up_at,
@@ -155,14 +156,27 @@ export async function getLeadByEmailForUser(leadEmail, userId) {
   return result.rows[0] ? mapLead(result.rows[0]) : null;
 }
 
-export async function createLead({ userId, name, email, phone = null, status = "new", score, bucket, signals, behaviorTrend, confidenceScore, lastActivityAt = null }) {
+export async function createLead({
+  userId,
+  name,
+  email,
+  phone = null,
+  status = "new",
+  score,
+  bucket,
+  signals,
+  behaviorTrend,
+  confidenceScore,
+  pipelineProgress = {},
+  lastActivityAt = null
+}) {
   const result = await pool.query(
     `insert into leads (
       user_id, name, email, phone, status, score, bucket,
       response_time_minutes, message_intent, follow_through_rate, weekly_engagement_touches,
-      behavior_trend, confidence_score, last_activity_at
+      behavior_trend, confidence_score, pipeline_progress, last_activity_at
     )
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
     returning *`,
     [
       userId,
@@ -178,6 +192,7 @@ export async function createLead({ userId, name, email, phone = null, status = "
       signals.weeklyEngagementTouches,
       behaviorTrend,
       confidenceScore,
+      JSON.stringify(pipelineProgress || {}),
       lastActivityAt
     ]
   );
@@ -196,9 +211,10 @@ export async function updateLeadSnapshot(lead) {
          weekly_engagement_touches = $8,
          behavior_trend = $9,
          confidence_score = $10,
-         last_activity_at = $11,
-         last_nurture_email_at = $12,
-         last_suggested_follow_up_at = $13,
+         pipeline_progress = $11::jsonb,
+         last_activity_at = $12,
+         last_nurture_email_at = $13,
+         last_suggested_follow_up_at = $14,
          updated_at = now()
      where id = $1
      returning *`,
@@ -213,6 +229,7 @@ export async function updateLeadSnapshot(lead) {
       lead.signals.weeklyEngagementTouches,
       lead.behaviorTrend,
       lead.confidenceScore,
+      JSON.stringify(lead.pipelineProgress || {}),
       lead.lastActivityAt,
       lead.lastNurtureEmailAt,
       lead.lastSuggestedFollowUpAt
@@ -236,7 +253,8 @@ export async function updateLeadForUser(leadId, userId, payload) {
          weekly_engagement_touches = $12,
          behavior_trend = $13,
          confidence_score = $14,
-         last_activity_at = $15,
+         pipeline_progress = $15::jsonb,
+         last_activity_at = $16,
          updated_at = now()
      where id = $1 and user_id = $2
      returning *`,
@@ -255,6 +273,7 @@ export async function updateLeadForUser(leadId, userId, payload) {
       payload.signals.weeklyEngagementTouches,
       payload.behaviorTrend,
       payload.confidenceScore,
+      JSON.stringify(payload.pipelineProgress || {}),
       payload.lastActivityAt
     ]
   );
