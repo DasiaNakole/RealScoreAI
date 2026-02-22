@@ -19,6 +19,7 @@ function mapLead(row) {
     behaviorTrend: row.behavior_trend,
     confidenceScore: Number(row.confidence_score),
     pipelineProgress: row.pipeline_progress || {},
+    closedAt: row.closed_at,
     lastActivityAt: row.last_activity_at,
     lastNurtureEmailAt: row.last_nurture_email_at,
     lastSuggestedFollowUpAt: row.last_suggested_follow_up_at,
@@ -168,15 +169,16 @@ export async function createLead({
   behaviorTrend,
   confidenceScore,
   pipelineProgress = {},
+  closedAt = null,
   lastActivityAt = null
 }) {
   const result = await pool.query(
     `insert into leads (
       user_id, name, email, phone, status, score, bucket,
       response_time_minutes, message_intent, follow_through_rate, weekly_engagement_touches,
-      behavior_trend, confidence_score, pipeline_progress, last_activity_at
+      behavior_trend, confidence_score, pipeline_progress, closed_at, last_activity_at
     )
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
     returning *`,
     [
       userId,
@@ -193,6 +195,7 @@ export async function createLead({
       behaviorTrend,
       confidenceScore,
       JSON.stringify(pipelineProgress || {}),
+      closedAt,
       lastActivityAt
     ]
   );
@@ -212,9 +215,10 @@ export async function updateLeadSnapshot(lead) {
          behavior_trend = $9,
          confidence_score = $10,
          pipeline_progress = $11::jsonb,
-         last_activity_at = $12,
-         last_nurture_email_at = $13,
-         last_suggested_follow_up_at = $14,
+         closed_at = $12,
+         last_activity_at = $13,
+         last_nurture_email_at = $14,
+         last_suggested_follow_up_at = $15,
          updated_at = now()
      where id = $1
      returning *`,
@@ -230,6 +234,7 @@ export async function updateLeadSnapshot(lead) {
       lead.behaviorTrend,
       lead.confidenceScore,
       JSON.stringify(lead.pipelineProgress || {}),
+      lead.closedAt,
       lead.lastActivityAt,
       lead.lastNurtureEmailAt,
       lead.lastSuggestedFollowUpAt
@@ -254,7 +259,8 @@ export async function updateLeadForUser(leadId, userId, payload) {
          behavior_trend = $13,
          confidence_score = $14,
          pipeline_progress = $15::jsonb,
-         last_activity_at = $16,
+         closed_at = $16,
+         last_activity_at = $17,
          updated_at = now()
      where id = $1 and user_id = $2
      returning *`,
@@ -274,6 +280,7 @@ export async function updateLeadForUser(leadId, userId, payload) {
       payload.behaviorTrend,
       payload.confidenceScore,
       JSON.stringify(payload.pipelineProgress || {}),
+      payload.closedAt,
       payload.lastActivityAt
     ]
   );
@@ -445,6 +452,18 @@ export async function listTrackingLinksByLeadForUser(leadId, userId) {
     [userId, leadId]
   );
   return result.rows;
+}
+
+export async function hasLeadEventType(leadId, eventType) {
+  const result = await pool.query(
+    `select exists(
+      select 1
+      from events
+      where lead_id = $1 and event_type = $2
+    ) as found`,
+    [leadId, eventType]
+  );
+  return Boolean(result.rows[0]?.found);
 }
 
 export async function getTrackingLinkById(id) {

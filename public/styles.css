@@ -65,6 +65,10 @@ h3 {
   letter-spacing: 0.01em;
 }
 
+.small-heading {
+  font-size: 1.05rem;
+}
+
 .landing,
 .dashboard,
 .auth-wrap,

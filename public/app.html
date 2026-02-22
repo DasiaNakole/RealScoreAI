@@ -22,16 +22,19 @@
 
       <section class="cards-grid">
         <article class="panel">
-          <h2>Top 5 Leads</h2>
-          <ul id="today-focus" class="lead-list"></ul>
+          <h2 class="small-heading">Top 5 Clients (active)</h2>
+          <p class="meta">Clients working towards closing</p>
+          <ul id="top5-clients" class="lead-list"></ul>
         </article>
         <article class="panel">
-          <h2>At Risk</h2>
-          <ul id="at-risk" class="lead-list"></ul>
+          <h2 class="small-heading">On deck (active) [check in every 30 days]</h2>
+          <p class="meta">Clients working towards preapproval [Credit repair/can’t get financing]</p>
+          <ul id="on-deck-clients" class="lead-list"></ul>
         </article>
         <article class="panel">
-          <h2>Low Value</h2>
-          <ul id="low-value" class="lead-list"></ul>
+          <h2 class="small-heading">Potentials (Inactive)</h2>
+          <p class="meta">Clients expressing interest, but haven’t decided to move forward</p>
+          <ul id="potentials-clients" class="lead-list"></ul>
         </article>
       </section>
 
@@ -53,6 +56,7 @@
               <option value="appraisal">Appraisal</option>
               <option value="sign_documents">Sign Documents</option>
               <option value="closing">Closing</option>
+              <option value="closed">Closed</option>
               <option value="nurture">Nurture</option>
             </select>
           </label>
@@ -67,6 +71,7 @@
             <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
             <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
             <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
+            <label><input type="checkbox" id="pipeline-closed" /> Closed</label>
           </fieldset>
           <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
           <label>Buyer Intent
@@ -136,6 +141,10 @@
         <h2>Cadence Queue</h2>
         <p id="cadence-status" class="meta">Run cadence to load due leads here.</p>
         <div id="cadence-queue" class="invite-list"></div>
+        <div class="hero-actions">
+          <a class="btn btn-secondary" href="followups.html">Open Follow-Ups Page</a>
+          <a class="btn btn-secondary" href="closed.html">Open Closed Clients Page</a>
+        </div>
       </section>
     </main>
 

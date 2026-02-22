@@ -22,6 +22,7 @@ import {
   getLeadByIdForUser,
   getTrackingLinkById,
   getTemplateByKey,
+  hasLeadEventType,
   listAllLeads,
   listTemplates,
   getSubscriptionByUserId,
@@ -308,7 +309,8 @@ const LEAD_PIPELINE_STEPS = [
   "home_inspection",
   "appraisal",
   "sign_documents",
-  "closing"
+  "closing",
+  "closed"
 ];
 
 function normalizePipelineProgress(rawProgress) {
@@ -318,6 +320,45 @@ function normalizePipelineProgress(rawProgress) {
     result[step] = Boolean(source[step]);
   }
   return result;
+}
+
+const CHECKLIST_STAGE_LABELS = {
+  consultation: "Consultation",
+  exclusive_buyer_agreement: "Exclusive Buyer Agreement (EBA)",
+  preapproval: "Preapproval",
+  home_search: "Home Search",
+  schedule_visits: "Schedule Visits",
+  home_inspection: "Home Inspection",
+  appraisal: "Appraisal",
+  sign_documents: "Sign Documents",
+  closing: "Closing",
+  closed: "Closed",
+  nurture: "Nurture"
+};
+
+function stageFromPipeline(progress) {
+  let current = "consultation";
+  for (const step of LEAD_PIPELINE_STEPS) {
+    if (progress[step]) current = step;
+  }
+  return current;
+}
+
+function normalizeLeadStage(stage) {
+  const value = String(stage || "").trim().toLowerCase();
+  const legacy = {
+    new: "consultation",
+    qualified: "exclusive_buyer_agreement",
+    touring: "schedule_visits",
+    closed: "closed"
+  };
+  return legacy[value] || value || "consultation";
+}
+
+function isLeadClosed(lead) {
+  const progress = normalizePipelineProgress(lead.pipelineProgress);
+  const stage = normalizeLeadStage(lead.stage);
+  return Boolean(progress.closed || stage === "closed");
 }
 
 function renderTemplateString(template, vars) {
@@ -428,6 +469,7 @@ async function applyAndPersistLeadEvent(lead, event, userId) {
     behaviorTrend: updated.behaviorTrend,
     confidenceScore: updated.confidenceScore,
     pipelineProgress: normalizePipelineProgress(updated.pipelineProgress || lead.pipelineProgress),
+    closedAt: lead.closedAt || null,
     lastActivityAt: new Date().toISOString(),
     lastNurtureEmailAt: updated.lastNurtureEmailAt,
     lastSuggestedFollowUpAt: updated.lastSuggestedFollowUpAt
@@ -906,6 +948,11 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     followThroughRate: normalizeFollowThroughRate(followThroughRate, followThroughSignal),
     weeklyEngagementTouches: Number(weeklyEngagementTouches)
   };
+  const normalizedProgress = normalizePipelineProgress(pipelineProgress);
+  const normalizedStage = normalizeLeadStage(stage) || stageFromPipeline(normalizedProgress);
+  const closedAt = normalizedProgress.closed || normalizedStage === "closed"
+    ? new Date().toISOString()
+    : null;
 
   const scored = calculateLeadScore(signals);
   const lead = await createLead({
@@ -913,13 +960,14 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
     phone: phone ? String(phone).trim() : null,
-    status: String(stage),
+    status: normalizedStage,
     score: scored.score,
     bucket: scored.bucket,
     signals,
     behaviorTrend: "stable",
     confidenceScore: 60,
-    pipelineProgress: normalizePipelineProgress(pipelineProgress),
+    pipelineProgress: normalizedProgress,
+    closedAt,
     lastActivityAt: new Date().toISOString()
   });
 
@@ -942,7 +990,7 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     name: String(req.body?.name ?? existing.name).trim(),
     email: String(req.body?.email ?? existing.email).trim().toLowerCase(),
     phone: req.body?.phone !== undefined ? String(req.body.phone || "").trim() || null : existing.phone,
-    stage: String(req.body?.stage ?? existing.stage),
+    stage: normalizeLeadStage(String(req.body?.stage ?? existing.stage)),
     pipelineProgress: normalizePipelineProgress(req.body?.pipelineProgress ?? existing.pipelineProgress),
     signals: {
       responseTimeMinutes: Number(req.body?.responseTimeMinutes ?? existing.signals.responseTimeMinutes),
@@ -956,6 +1004,8 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
   };
 
   const scored = calculateLeadScore(merged.signals);
+  const shouldClose = merged.pipelineProgress.closed || merged.stage === "closed";
+  const closedAt = shouldClose ? (existing.closedAt || new Date().toISOString()) : null;
   const updated = await updateLeadForUser(existing.id, req.user.id, {
     ...merged,
     score: scored.score,
@@ -963,6 +1013,7 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     behaviorTrend: existing.behaviorTrend,
     confidenceScore: existing.confidenceScore,
     pipelineProgress: merged.pipelineProgress,
+    closedAt,
     lastActivityAt: new Date().toISOString()
   });
 
@@ -1044,22 +1095,67 @@ app.post("/api/webhooks/lead-activity", requireWebhookKey, async (req, res) => {
 
 app.get("/api/dashboard", requireAuth, requireActiveAccess, async (req, res) => {
   const leads = await listLeadsByUser(req.user.id);
+  const openLeads = leads.filter((lead) => !isLeadClosed(lead));
 
-  const todayFocus = leads.filter((lead) => lead.score >= 75).sort((a, b) => b.score - a.score).slice(0, 5);
-  const atRisk = leads.filter((lead) => lead.score >= 50 && lead.score < 75);
-  const lowValue = leads.filter((lead) => lead.score < 50);
+  const enrich = (lead) => {
+    const progress = normalizePipelineProgress(lead.pipelineProgress);
+    const stage = normalizeLeadStage(lead.stage);
+    const stageFromList = progress && Object.keys(progress).length ? stageFromPipeline(progress) : stage;
+    const stageRank = LEAD_PIPELINE_STEPS.indexOf(stageFromList);
+    return {
+      ...lead,
+      checklistStage: stageFromList,
+      checklistStageLabel: CHECKLIST_STAGE_LABELS[stageFromList] || "Consultation",
+      preapproved: Boolean(progress.preapproval),
+      hasEba: Boolean(progress.exclusive_buyer_agreement),
+      stageRank: stageRank >= 0 ? stageRank : 0
+    };
+  };
 
-  await insertEvent({ userId: req.user.id, eventType: "dashboard_viewed", metadata: { todayFocus: todayFocus.length, atRisk: atRisk.length, lowValue: lowValue.length } });
+  const enriched = openLeads.map(enrich);
+  const top5 = enriched
+    .filter((lead) => lead.hasEba && lead.preapproved)
+    .sort((a, b) => b.stageRank - a.stageRank || b.score - a.score)
+    .slice(0, 5);
+
+  const onDeck = enriched
+    .filter((lead) => lead.hasEba && !lead.preapproved)
+    .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
+
+  const potentials = enriched
+    .filter((lead) => !lead.hasEba)
+    .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "dashboard_viewed",
+    metadata: { top5: top5.length, onDeck: onDeck.length, potentials: potentials.length }
+  });
 
   res.json({
-    todayFocus: todayFocus.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
-    atRisk: atRisk.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
-    lowValue: lowValue.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore }))
+    top5: top5.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
+    onDeck: onDeck.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
+    potentials: potentials.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore }))
   });
 });
 
 app.get("/api/usage", requireAuth, requireActiveAccess, async (req, res) => {
   res.json({ userId: req.user.id, usage: await getUsageByUser(req.user.id) });
+});
+
+app.get("/api/leads/closed", requireAuth, requireActiveAccess, async (req, res) => {
+  const leads = await listLeadsByUser(req.user.id);
+  const closed = leads
+    .filter((lead) => isLeadClosed(lead))
+    .map((lead) => ({
+      ...lead,
+      checklistStage: "closed",
+      checklistStageLabel: "Closed",
+      closedAt: lead.closedAt || lead.updatedAt
+    }))
+    .sort((a, b) => new Date(b.closedAt).getTime() - new Date(a.closedAt).getTime());
+
+  res.json({ closed });
 });
 
 app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, res) => {
@@ -1163,6 +1259,83 @@ app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async
     res.json({ job: "daily_focus_digest", to: req.user.email, leadCount: top.length, leads: top, delivery });
   } catch (error) {
     res.status(400).json({ error: error.message || "Daily digest failed." });
+  }
+});
+
+app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess, async (req, res) => {
+  try {
+    const leads = await listLeadsByUser(req.user.id);
+    const now = Date.now();
+    const sent = [];
+    const skipped = [];
+
+    for (const lead of leads) {
+      if (!isLeadClosed(lead)) continue;
+
+      const closedAtMs = lead.closedAt ? new Date(lead.closedAt).getTime() : new Date(lead.updatedAt).getTime();
+      if (!closedAtMs || Number.isNaN(closedAtMs)) {
+        skipped.push({ leadId: lead.id, reason: "invalid_closed_date" });
+        continue;
+      }
+
+      const daysSince = Math.floor((now - closedAtMs) / (24 * 60 * 60 * 1000));
+      if (daysSince < 90) {
+        skipped.push({ leadId: lead.id, reason: "not_due_yet" });
+        continue;
+      }
+
+      const alreadySent = await hasLeadEventType(lead.id, "closed_followup_sent_3m");
+      if (alreadySent) {
+        skipped.push({ leadId: lead.id, reason: "already_sent" });
+        continue;
+      }
+
+      const firstName = String(lead.name || "").split(" ")[0] || "there";
+      const fallbackSubject = `Checking in after your closing, ${firstName}`;
+      const fallbackBody = [
+        `Hi ${firstName},`,
+        "",
+        "It has been about 3 months since your closing, and I wanted to check in to make sure everything is going smoothly.",
+        "",
+        "If you need anything at all or know anyone who could use help buying or selling, I am happy to help.",
+        "",
+        "- Your agent"
+      ].join("\n");
+
+      const templated = await resolveTemplateForPlan(req.subscription?.planId, "closed_followup_3m", fallbackSubject, fallbackBody, {
+        firstName,
+        leadName: lead.name
+      });
+
+      const delivery = await sendEmail({
+        to: lead.email,
+        subject: templated.subject,
+        text: templated.body
+      });
+
+      await insertEvent({
+        userId: req.user.id,
+        leadId: lead.id,
+        eventType: "closed_followup_sent_3m",
+        metadata: {
+          deliveryMode: delivery.mode,
+          closedAt: lead.closedAt || lead.updatedAt,
+          daysSinceClose: daysSince
+        }
+      });
+
+      sent.push({ leadId: lead.id, leadName: lead.name, mode: delivery.mode, daysSinceClose: daysSince });
+    }
+
+    res.json({
+      job: "closed_followup_3m",
+      sentCount: sent.length,
+      skippedCount: skipped.length,
+      sent,
+      skipped
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Closed follow-up job failed." });
   }
 });
 

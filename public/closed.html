@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Closed Clients | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col">
+      <section class="panel form-panel">
+        <h1>Closed Clients</h1>
+        <p class="meta">Organized by close date. Run the 3-month referral/check-in follow-up automation.</p>
+        <div class="hero-actions">
+          <a class="btn btn-secondary" href="app.html">Back to Dashboard</a>
+          <button id="run-closed-followup" class="btn btn-primary" type="button">Run 3-month follow-up</button>
+        </div>
+        <p class="meta" id="closed-message"></p>
+        <div id="closed-list" class="invite-list"></div>
+      </section>
+    </main>
+    <script src="closed.js"></script>
+  </body>
+</html>

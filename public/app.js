@@ -30,7 +30,8 @@ const PIPELINE_STEPS = [
   'home_inspection',
   'appraisal',
   'sign_documents',
-  'closing'
+  'closing',
+  'closed'
 ];
 
 const STAGE_LABELS = {
@@ -43,6 +44,7 @@ const STAGE_LABELS = {
   appraisal: 'Appraisal',
   sign_documents: 'Sign Documents',
   closing: 'Closing',
+  closed: 'Closed',
   nurture: 'Nurture',
   new: 'Consultation',
   qualified: 'Exclusive Buyer Agreement (EBA)',
@@ -240,7 +242,7 @@ function renderCadenceQueue() {
 function leadItem(lead) {
   const li = document.createElement('li');
   li.className = `lead-item ${lead.score < 50 ? 'low' : ''}`;
-  const checklistStage = STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
+  const checklistStage = lead.checklistStageLabel || STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
   li.innerHTML = `
     <strong>${lead.name}</strong>
     <span class="meta">${lead.stage} | trend: ${lead.behaviorTrend}</span>
@@ -375,9 +377,9 @@ async function loadDashboard() {
   if (!data) return;
 
   const mappings = [
-    ['today-focus', data.todayFocus],
-    ['at-risk', data.atRisk],
-    ['low-value', data.lowValue]
+    ['top5-clients', data.top5 || []],
+    ['on-deck-clients', data.onDeck || []],
+    ['potentials-clients', data.potentials || []]
   ];
 
   for (const [id, leads] of mappings) {

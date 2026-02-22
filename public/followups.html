@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Follow-Ups | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="single-col">
+      <section class="panel form-panel">
+        <h1>Follow-Ups</h1>
+        <p class="meta">Generate suggestions, review templates, and send follow-ups from one page.</p>
+        <div class="hero-actions">
+          <a class="btn btn-secondary" href="app.html">Back to Dashboard</a>
+          <button id="run-cadence" class="btn btn-secondary" type="button">Run cadence (hot 24h / warm 72h)</button>
+        </div>
+        <label>Select lead
+          <select id="lead-select"></select>
+        </label>
+        <p class="meta" id="followups-message"></p>
+        <label>Subject
+          <input id="followup-subject" />
+        </label>
+        <label>Message
+          <textarea id="followup-body" rows="8"></textarea>
+        </label>
+        <button id="send-followup" class="btn btn-primary" type="button">Send follow-up</button>
+      </section>
+    </main>
+    <script src="followups.js"></script>
+  </body>
+</html>
