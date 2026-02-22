@@ -33,6 +33,23 @@ const PIPELINE_STEPS = [
   'closing'
 ];
 
+const STAGE_LABELS = {
+  consultation: 'Consultation',
+  exclusive_buyer_agreement: 'Exclusive Buyer Agreement (EBA)',
+  preapproval: 'Preapproval',
+  home_search: 'Home Search',
+  schedule_visits: 'Schedule Visits',
+  home_inspection: 'Home Inspection',
+  appraisal: 'Appraisal',
+  sign_documents: 'Sign Documents',
+  closing: 'Closing',
+  nurture: 'Nurture',
+  new: 'Consultation',
+  qualified: 'Exclusive Buyer Agreement (EBA)',
+  touring: 'Schedule Visits',
+  closed: 'Closing'
+};
+
 function rateFromSignal(signal) {
   return FOLLOW_THROUGH_SIGNAL_TO_RATE[signal] ?? FOLLOW_THROUGH_SIGNAL_TO_RATE.none;
 }
@@ -223,10 +240,12 @@ function renderCadenceQueue() {
 function leadItem(lead) {
   const li = document.createElement('li');
   li.className = `lead-item ${lead.score < 50 ? 'low' : ''}`;
+  const checklistStage = STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
   li.innerHTML = `
     <strong>${lead.name}</strong>
     <span class="meta">${lead.stage} | trend: ${lead.behaviorTrend}</span>
     <span class="score">Score: ${lead.score} | confidence: ${lead.confidenceScore}%</span>
+    <span class="meta">Checklist stage: ${checklistStage}</span>
   `;
 
   li.addEventListener('click', async () => {
