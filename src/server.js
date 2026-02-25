@@ -802,6 +802,21 @@ app.get("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
   res.json({ leads: leads.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })) });
 });
 
+app.get("/api/leads/closed", requireAuth, requireActiveAccess, async (req, res) => {
+  const leads = await listLeadsByUser(req.user.id);
+  const closed = leads
+    .filter((lead) => isLeadClosed(lead))
+    .map((lead) => ({
+      ...lead,
+      checklistStage: "closed",
+      checklistStageLabel: "Closed",
+      closedAt: lead.closedAt || lead.updatedAt
+    }))
+    .sort((a, b) => new Date(b.closedAt).getTime() - new Date(a.closedAt).getTime());
+
+  res.json({ closed });
+});
+
 app.get("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {
   const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
   if (!lead) return res.status(404).json({ error: "Lead not found" });
@@ -1141,21 +1156,6 @@ app.get("/api/dashboard", requireAuth, requireActiveAccess, async (req, res) => 
 
 app.get("/api/usage", requireAuth, requireActiveAccess, async (req, res) => {
   res.json({ userId: req.user.id, usage: await getUsageByUser(req.user.id) });
-});
-
-app.get("/api/leads/closed", requireAuth, requireActiveAccess, async (req, res) => {
-  const leads = await listLeadsByUser(req.user.id);
-  const closed = leads
-    .filter((lead) => isLeadClosed(lead))
-    .map((lead) => ({
-      ...lead,
-      checklistStage: "closed",
-      checklistStageLabel: "Closed",
-      closedAt: lead.closedAt || lead.updatedAt
-    }))
-    .sort((a, b) => new Date(b.closedAt).getTime() - new Date(a.closedAt).getTime());
-
-  res.json({ closed });
 });
 
 app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, res) => {

@@ -48,8 +48,7 @@ const STAGE_LABELS = {
   nurture: 'Nurture',
   new: 'Consultation',
   qualified: 'Exclusive Buyer Agreement (EBA)',
-  touring: 'Schedule Visits',
-  closed: 'Closing'
+  touring: 'Schedule Visits'
 };
 
 function rateFromSignal(signal) {
@@ -137,6 +136,7 @@ async function authedFetch(path, options = {}) {
 
 function setFollowUpStatus(message, isError = false) {
   const node = document.getElementById('followup-status');
+  if (!node) return;
   node.textContent = message;
   node.style.color = isError ? '#ff5f7a' : '';
 }
@@ -161,12 +161,14 @@ function setLeadManagerStatus(message, isError = false) {
 
 function setTrackingStatus(message, isError = false) {
   const node = document.getElementById('tracking-status');
+  if (!node) return;
   node.textContent = message;
   node.style.color = isError ? '#ff5f7a' : '#9aa8be';
 }
 
 function setTrackingUrl(url) {
   const node = document.getElementById('tracking-url');
+  if (!node) return;
   lastTrackingUrl = String(url || '').trim();
   if (!lastTrackingUrl) {
     node.style.display = 'none';
@@ -195,11 +197,15 @@ function renderScoreDetails(data) {
 }
 
 async function loadSuggestedFollowUp(leadId) {
+  const subjectNode = document.getElementById('followup-subject');
+  const bodyNode = document.getElementById('followup-body');
+  if (!subjectNode || !bodyNode) return;
+
   const data = await authedFetch(`/api/leads/${leadId}/suggested-follow-up`);
   if (!data) return;
 
-  document.getElementById('followup-subject').value = data.suggestion.subject;
-  document.getElementById('followup-body').value = data.suggestion.body;
+  subjectNode.value = data.suggestion.subject;
+  bodyNode.value = data.suggestion.body;
   setFollowUpStatus(data.isHighPriority
     ? `High-priority lead (score ${data.score}). Review and send.`
     : `Lead score is ${data.score}. You can still send this suggestion if needed.`);
@@ -210,32 +216,20 @@ function renderCadenceQueue() {
   node.innerHTML = '';
 
   if (!cadenceDueCache.length) {
-    node.innerHTML = '<p class="meta">No due follow-ups in queue.</p>';
+    node.innerHTML = '<p class="meta">No leads currently due for a follow up.</p>';
     return;
   }
 
   cadenceDueCache.forEach((item) => {
     const card = document.createElement('article');
     card.className = 'invite-item';
+    const stageLabel = item.checklistStageLabel || STAGE_LABELS[normalizeLeadStage(item.checklistStage)] || 'Consultation';
     card.innerHTML = `
       <strong>${item.leadName}</strong>
       <span class="meta">Score ${item.score} | cadence ${item.cadence}</span>
-      <div class="hero-actions">
-        <button class="btn btn-secondary" data-load-cadence="${item.leadId}" type="button">Load suggestion</button>
-      </div>
+      <span class="meta">Checklist stage: ${stageLabel}</span>
     `;
     node.appendChild(card);
-  });
-
-  document.querySelectorAll('[data-load-cadence]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const item = cadenceDueCache.find((due) => due.leadId === button.dataset.loadCadence);
-      if (!item) return;
-      selectedLeadId = item.leadId;
-      document.getElementById('followup-subject').value = item.suggestion.subject;
-      document.getElementById('followup-body').value = item.suggestion.body;
-      setFollowUpStatus(`Loaded cadence suggestion for ${item.leadName}.`);
-    });
   });
 }
 
@@ -252,12 +246,9 @@ function leadItem(lead) {
 
   li.addEventListener('click', async () => {
     selectedLeadId = lead.id;
-    setTrackingStatus(`Lead selected: ${lead.name}.`);
-    setTrackingUrl('');
     const explanation = await authedFetch(`/api/leads/${lead.id}/explanation`);
     if (!explanation) return;
     renderScoreDetails(explanation);
-    await loadSuggestedFollowUp(lead.id);
   });
 
   return li;
@@ -335,10 +326,6 @@ function renderLeadManagerList(leads) {
         await authedFetch(`/api/leads/${id}`, { method: 'DELETE' });
         if (selectedLeadId === id) {
           selectedLeadId = null;
-          document.getElementById('followup-subject').value = '';
-          document.getElementById('followup-body').value = '';
-          setFollowUpStatus('Lead deleted. Select another lead.');
-          setTrackingUrl('');
         }
         setLeadManagerStatus('Lead deleted.');
         await loadDashboard();
@@ -406,7 +393,7 @@ function connectRealtimeStream() {
   stream = new EventSource(url);
 
   stream.addEventListener('connected', () => {
-    setFollowUpStatus('Live updates connected.');
+    setCadenceStatus('Live updates connected.');
   });
 
   stream.addEventListener('lead.updated', () => {
@@ -418,7 +405,7 @@ function connectRealtimeStream() {
   });
 
   stream.onerror = () => {
-    setFollowUpStatus('Live updates reconnecting...');
+    setCadenceStatus('Live updates reconnecting...');
   };
 }
 
@@ -480,7 +467,7 @@ document.getElementById('lead-form').addEventListener('submit', async (event) =>
   }
 });
 
-document.getElementById('send-followup').addEventListener('click', async () => {
+document.getElementById('send-followup')?.addEventListener('click', async () => {
   if (!selectedLeadId) {
     setFollowUpStatus('Select a lead first.', true);
     return;
@@ -509,31 +496,24 @@ document.getElementById('send-followup').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('run-followup-cadence').addEventListener('click', async () => {
+document.getElementById('run-followup-cadence')?.addEventListener('click', async () => {
   try {
     const result = await authedFetch('/api/automation/followup-cadence', { method: 'POST' });
     if (!result) return;
 
     if (!result.dueCount) {
-      setFollowUpStatus('No cadence follow-ups due right now.');
       cadenceDueCache = [];
       renderCadenceQueue();
-      setCadenceStatus('No due follow-ups right now.');
+      setCadenceStatus('No leads due for a follow up right now.');
       return;
     }
 
     cadenceDueCache = result.due || [];
     renderCadenceQueue();
-    setCadenceStatus(`${result.dueCount} lead(s) due for follow-up.`);
-
-    const first = cadenceDueCache[0];
-    selectedLeadId = first.leadId;
-    document.getElementById('followup-subject').value = first.suggestion.subject;
-    document.getElementById('followup-body').value = first.suggestion.body;
-    setFollowUpStatus(`Cadence found ${result.dueCount} due lead(s). Loaded ${first.leadName} first.`);
+    setCadenceStatus(`${result.dueCount} lead(s) due for a follow up.`);
     await loadDashboard();
   } catch (error) {
-    setFollowUpStatus(error.message, true);
+    setCadenceStatus(error.message, true);
   }
 });
 
@@ -550,7 +530,7 @@ document.getElementById('load-tone-profile').addEventListener('click', async () 
   }
 });
 
-document.getElementById('create-tracking-link').addEventListener('click', async () => {
+document.getElementById('create-tracking-link')?.addEventListener('click', async () => {
   if (!selectedLeadId) {
     setTrackingStatus('Select a lead first.', true);
     return;
@@ -580,7 +560,7 @@ document.getElementById('create-tracking-link').addEventListener('click', async 
   }
 });
 
-document.getElementById('insert-tracking-link').addEventListener('click', () => {
+document.getElementById('insert-tracking-link')?.addEventListener('click', () => {
   if (!lastTrackingUrl) {
     setTrackingStatus('Create a tracked listing link first.', true);
     return;
