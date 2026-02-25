@@ -1,4 +1,9 @@
-export function buildMonthlyNurtureEmail(lead) {
+function agentSignature(agentName) {
+  const clean = String(agentName || "").trim();
+  return clean ? `- ${clean}` : "- Your agent";
+}
+
+export function buildMonthlyNurtureEmail(lead, agentName = "") {
   const subject = `Still searching, ${lead.name.split(" ")[0]}?`; 
   const text = [
     `Hi ${lead.name},`,
@@ -7,7 +12,7 @@ export function buildMonthlyNurtureEmail(lead) {
     "",
     "No rush at all. When timing is right, we are ready.",
     "",
-    "- Your agent"
+    agentSignature(agentName)
   ].join("\n");
 
   return { subject, text };
@@ -29,7 +34,7 @@ export function buildDailyDigestEmail(agentName, leads) {
   return { subject, text };
 }
 
-export function buildSuggestedFollowUp(lead) {
+export function buildSuggestedFollowUp(lead, agentName = "") {
   const first = String(lead?.name || "there").split(" ")[0] || "there";
   const intent = String(lead?.signals?.messageIntent || "unknown").toLowerCase();
   const score = Number(lead?.score || 0);
@@ -191,7 +196,7 @@ export function buildSuggestedFollowUp(lead) {
   };
 
   const selected = stageTemplates[stage] || stageTemplates.consultation;
-  return { subject: selected.subject, body: `${selected.body.join("\n")}\n\n- Your agent` };
+  return { subject: selected.subject, body: `${selected.body.join("\n")}\n\n${agentSignature(agentName)}` };
 }
 
 export function buildBetaEndingReminderEmail({ userName, plan, daysLeft }) {

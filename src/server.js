@@ -852,7 +852,7 @@ app.get("/api/leads/:leadId/suggested-follow-up", requireAuth, requireActiveAcce
 
   await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "followup_suggested", metadata: {} });
 
-  const fallback = buildSuggestedFollowUp(lead);
+  const fallback = buildSuggestedFollowUp(lead, req.user.name);
   const firstName = String(lead.name || "").split(" ")[0] || "there";
   const templateKey = lead.signals.messageIntent === "hot" ? "followup_hot" : "followup_default";
   const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
@@ -923,7 +923,7 @@ app.post("/api/leads/:leadId/send-follow-up", requireAuth, requireActiveAccess, 
     const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
-    const defaultSuggestion = buildSuggestedFollowUp(lead);
+    const defaultSuggestion = buildSuggestedFollowUp(lead, req.user.name);
     const subject = String(req.body?.subject || defaultSuggestion.subject);
     const body = String(req.body?.body || defaultSuggestion.body);
 
@@ -1196,7 +1196,7 @@ app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async
         const shouldSend = !lastSent || Date.now() - lastSent >= 30 * 24 * 60 * 60 * 1000;
 
         if (shouldSend) {
-          const fallback = buildMonthlyNurtureEmail(lead);
+          const fallback = buildMonthlyNurtureEmail(lead, req.user.name);
           const firstName = String(lead.name || "").split(" ")[0] || "there";
           const templated = await resolveTemplateForPlan(req.subscription?.planId, "nurture_monthly", fallback.subject, fallback.text, {
             firstName,
@@ -1320,7 +1320,7 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
         "",
         "If you need anything at all or know anyone who could use help buying or selling, I am happy to help.",
         "",
-        "- Your agent"
+        `- ${String(req.user.name || "").trim() || "Your agent"}`
       ].join("\n");
 
       const templated = await resolveTemplateForPlan(req.subscription?.planId, "closed_followup_3m", fallbackSubject, fallbackBody, {
@@ -1401,7 +1401,7 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
 
     if (!isDue) continue;
 
-    const fallback = buildSuggestedFollowUp(lead);
+    const fallback = buildSuggestedFollowUp(lead, req.user.name);
     const firstName = String(lead.name || "").split(" ")[0] || "there";
     const templateKey = lead.signals.messageIntent === "hot" ? "followup_hot" : "followup_default";
     const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
