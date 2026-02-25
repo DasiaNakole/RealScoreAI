@@ -388,8 +388,16 @@ function getPlanScopedTemplateKey(key, planScope) {
   return cleanKey;
 }
 
+function normalizePlanId(planId) {
+  return String(planId || "").trim().toLowerCase();
+}
+
+function isProPlan(planId) {
+  return normalizePlanId(planId) === "pro";
+}
+
 async function resolveTemplateForPlan(planId, key, fallbackSubject, fallbackBody, vars) {
-  const normalizedPlan = String(planId || "").trim().toLowerCase();
+  const normalizedPlan = normalizePlanId(planId);
   const planScopedKey = normalizedPlan === "core" || normalizedPlan === "pro"
     ? `${key}__${normalizedPlan}`
     : key;
@@ -1171,8 +1179,10 @@ app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, re
 app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
+    const autoSendEnabled = isProPlan(req.subscription?.planId);
     const movedLeadIds = [];
     const emailedLeadIds = [];
+    const manualReviewLeadIds = [];
 
     for (const lead of leads) {
       if (lead.score < 50) {
@@ -1192,10 +1202,15 @@ app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async
             firstName,
             leadName: lead.name
           });
-          await sendEmail({ to: lead.email, subject: templated.subject, text: templated.body });
-          lead.lastNurtureEmailAt = new Date().toISOString();
-          emailedLeadIds.push(lead.id);
-          await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "nurture_email_sent", metadata: {} });
+          if (autoSendEnabled) {
+            await sendEmail({ to: lead.email, subject: templated.subject, text: templated.body });
+            lead.lastNurtureEmailAt = new Date().toISOString();
+            emailedLeadIds.push(lead.id);
+            await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "nurture_email_sent", metadata: { mode: "auto" } });
+          } else {
+            manualReviewLeadIds.push(lead.id);
+            await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "nurture_email_due_manual", metadata: {} });
+          }
         }
 
         await updateLeadSnapshot(lead);
@@ -1210,11 +1225,15 @@ app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async
 
     res.json({
       job: "auto_nurture_low_score",
+      autoSendEnabled,
+      emailAutomationMode: autoSendEnabled ? "auto" : "manual_only",
       threshold: 50,
       movedLeadIds,
       emailedLeadIds,
+      manualReviewLeadIds,
       movedCount: movedLeadIds.length,
-      emailedCount: emailedLeadIds.length
+      emailedCount: emailedLeadIds.length,
+      manualReviewCount: manualReviewLeadIds.length
     });
   } catch (error) {
     res.status(400).json({ error: error.message || "Auto-nurture failed." });
@@ -1265,8 +1284,10 @@ app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async
 app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
+    const autoSendEnabled = isProPlan(req.subscription?.planId);
     const now = Date.now();
     const sent = [];
+    const dueManualReview = [];
     const skipped = [];
 
     for (const lead of leads) {
@@ -1307,31 +1328,54 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
         leadName: lead.name
       });
 
-      const delivery = await sendEmail({
-        to: lead.email,
-        subject: templated.subject,
-        text: templated.body
-      });
+      if (autoSendEnabled) {
+        const delivery = await sendEmail({
+          to: lead.email,
+          subject: templated.subject,
+          text: templated.body
+        });
 
-      await insertEvent({
-        userId: req.user.id,
-        leadId: lead.id,
-        eventType: "closed_followup_sent_3m",
-        metadata: {
-          deliveryMode: delivery.mode,
-          closedAt: lead.closedAt || lead.updatedAt,
-          daysSinceClose: daysSince
-        }
-      });
+        await insertEvent({
+          userId: req.user.id,
+          leadId: lead.id,
+          eventType: "closed_followup_sent_3m",
+          metadata: {
+            deliveryMode: delivery.mode,
+            closedAt: lead.closedAt || lead.updatedAt,
+            daysSinceClose: daysSince,
+            mode: "auto"
+          }
+        });
 
-      sent.push({ leadId: lead.id, leadName: lead.name, mode: delivery.mode, daysSinceClose: daysSince });
+        sent.push({ leadId: lead.id, leadName: lead.name, mode: delivery.mode, daysSinceClose: daysSince });
+      } else {
+        dueManualReview.push({
+          leadId: lead.id,
+          leadName: lead.name,
+          daysSinceClose: daysSince,
+          suggestion: templated
+        });
+        await insertEvent({
+          userId: req.user.id,
+          leadId: lead.id,
+          eventType: "closed_followup_due_manual_3m",
+          metadata: {
+            closedAt: lead.closedAt || lead.updatedAt,
+            daysSinceClose: daysSince
+          }
+        });
+      }
     }
 
     res.json({
       job: "closed_followup_3m",
+      autoSendEnabled,
+      emailAutomationMode: autoSendEnabled ? "auto" : "manual_only",
       sentCount: sent.length,
+      dueManualCount: dueManualReview.length,
       skippedCount: skipped.length,
       sent,
+      dueManualReview,
       skipped
     });
   } catch (error) {
@@ -1340,9 +1384,11 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
 });
 
 app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, async (req, res) => {
+  const autoSendEnabled = isProPlan(req.subscription?.planId);
   const now = Date.now();
   const leads = await listLeadsByUser(req.user.id);
   const due = [];
+  const autoSent = [];
 
   for (const lead of leads) {
     if (lead.score < 50) continue;
@@ -1369,8 +1415,35 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
       leadName: lead.name,
       score: lead.score,
       cadence: cadenceLabel,
-      suggestion: templated
+      suggestion: templated,
+      autoSendEnabled
     });
+
+    if (autoSendEnabled) {
+      const delivery = await sendEmail({
+        to: lead.email,
+        subject: templated.subject,
+        text: templated.body
+      });
+
+      await insertEvent({
+        userId: req.user.id,
+        leadId: lead.id,
+        eventType: "followup_sent",
+        metadata: {
+          subject: templated.subject,
+          body: templated.body,
+          deliveryMode: delivery.mode,
+          source: "followup_cadence_auto"
+        }
+      });
+
+      autoSent.push({
+        leadId: lead.id,
+        leadName: lead.name,
+        mode: delivery.mode
+      });
+    }
 
     await updateLeadSnapshot({
       ...lead,
@@ -1394,8 +1467,12 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
 
   res.json({
     job: "followup_cadence",
+    autoSendEnabled,
+    emailAutomationMode: autoSendEnabled ? "auto" : "manual_only",
     dueCount: due.length,
-    due
+    autoSentCount: autoSent.length,
+    due,
+    autoSent
   });
 });
 
