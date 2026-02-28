@@ -13,6 +13,12 @@ let cadenceDueCache = [];
 let lastTrackingUrl = '';
 let currentAccount = null;
 
+function hasProPlan(account) {
+  return String(account?.subscription?.planId || '').trim().toLowerCase() === 'pro';
+}
+
+document.getElementById('run-followup-cadence')?.style && (document.getElementById('run-followup-cadence').style.display = 'none');
+
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
   replied: 0.35,
@@ -361,7 +367,7 @@ async function loadDashboard() {
 
   const firstName = String(me.user?.name || '').trim().split(/\s+/)[0] || 'Agent';
   document.getElementById('welcome-name').textContent = `Welcome, ${firstName}.`;
-  const isPro = String(me.subscription?.planId || '').trim().toLowerCase() === 'pro';
+  const isPro = hasProPlan(me);
   const cadenceButton = document.getElementById('run-followup-cadence');
   if (cadenceButton) {
     cadenceButton.style.display = isPro ? '' : 'none';
@@ -509,7 +515,7 @@ document.getElementById('send-followup')?.addEventListener('click', async () => 
 });
 
 document.getElementById('run-followup-cadence')?.addEventListener('click', async () => {
-  if (currentAccount?.subscription?.planId !== 'pro') {
+  if (!hasProPlan(currentAccount)) {
     setCadenceStatus('Run follow ups is available on the Pro plan only.', true);
     return;
   }
