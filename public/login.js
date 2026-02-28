@@ -2,6 +2,7 @@ const TOKEN_KEY = 'authToken';
 const query = new URLSearchParams(window.location.search);
 const prefillEmail = query.get('email') || '';
 const messageNode = document.getElementById('auth-message');
+let loginInFlight = false;
 
 function setMessage(msg, isError = false) {
   messageNode.textContent = msg;
@@ -26,6 +27,11 @@ async function routeAfterAuth(token) {
   const meData = await meRes.json();
   if (!meRes.ok) throw new Error(meData.error || 'Could not load account');
 
+  if (meData.user?.role === 'admin') {
+    window.location.href = '/portal.html';
+    return;
+  }
+
   if (!meData.onboardingComplete) {
     window.location.href = '/onboarding.html';
     return;
@@ -44,9 +50,15 @@ if (prefillEmail) {
 
 document.getElementById('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (loginInFlight) return;
   const form = new FormData(event.currentTarget);
+  const submitButton = event.currentTarget.querySelector('button[type="submit"]');
 
   try {
+    loginInFlight = true;
+    if (submitButton) submitButton.disabled = true;
+    setMessage('');
+    localStorage.removeItem(TOKEN_KEY);
     const result = await authRequest('/api/auth/login', {
       email: form.get('email'),
       password: form.get('password')
@@ -56,5 +68,12 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
     await routeAfterAuth(result.token);
   } catch (error) {
     setMessage(error.message, true);
+  } finally {
+    loginInFlight = false;
+    if (submitButton) submitButton.disabled = false;
   }
+});
+
+document.querySelectorAll('#login-form input').forEach((input) => {
+  input.addEventListener('input', () => setMessage(''));
 });

@@ -37,7 +37,14 @@ export function getSmtpStatus() {
   };
 }
 
-export async function sendEmail({ to, subject, text }) {
+function formatFromHeader(fromEmail, fromName) {
+  const email = String(fromEmail || "").trim();
+  const name = String(fromName || "").replace(/[\r\n"]/g, "").trim();
+  if (!name) return email;
+  return `${name} via RealScoreAI <${email}>`;
+}
+
+export async function sendEmail({ to, subject, text, replyTo = "", fromName = "" }) {
   if (!to || !subject || !text) {
     throw new Error("to, subject, and text are required for email sending.");
   }
@@ -50,18 +57,31 @@ export async function sendEmail({ to, subject, text }) {
       mode: "mock",
       accepted: [to],
       subject,
+      replyTo: String(replyTo || "").trim(),
+      from: formatFromHeader(process.env.SMTP_FROM || process.env.SMTP_USER, fromName),
       message: "SMTP not configured. Email was simulated."
     };
   }
 
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = formatFromHeader(fromEmail, fromName);
+  const replyToValue = String(replyTo || "").trim() || undefined;
   const transport = createTransport();
-  const result = await transport.sendMail({ from, to, subject, text });
+  const result = await transport.sendMail({
+    from,
+    replyTo: replyToValue,
+    headers: replyToValue ? { "Reply-To": replyToValue } : undefined,
+    to,
+    subject,
+    text
+  });
 
   return {
     mode: "smtp",
     accepted: result.accepted || [],
     rejected: result.rejected || [],
-    messageId: result.messageId
+    messageId: result.messageId,
+    replyTo: replyToValue || "",
+    from
   };
 }

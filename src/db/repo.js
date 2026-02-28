@@ -70,6 +70,17 @@ export async function updateUserPasswordHash(userId, passwordHash) {
   await pool.query(`update users set password_hash = $2, last_active_at = now() where id = $1`, [userId, passwordHash]);
 }
 
+export async function updateUserRole(userId, role, betaFlag = false) {
+  const result = await pool.query(
+    `update users
+     set role = $2, beta_flag = $3, last_active_at = now()
+     where id = $1
+     returning id, email, password_hash, name, role, beta_flag, created_at, last_active_at, market, monthly_lead_volume, goal`,
+    [userId, role, betaFlag]
+  );
+  return result.rows[0] || null;
+}
+
 export async function updateUserOnboarding(userId, { market, monthlyLeadVolume, goal }) {
   const result = await pool.query(
     `update users

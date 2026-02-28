@@ -1,6 +1,6 @@
 function agentSignature(agentName) {
   const clean = String(agentName || "").trim();
-  return clean ? `- ${clean}` : "- Your agent";
+  return clean ? `- ${clean}` : "- RealScoreAI";
 }
 
 export function buildMonthlyNurtureEmail(lead, agentName = "") {

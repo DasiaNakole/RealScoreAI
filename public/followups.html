@@ -16,7 +16,8 @@
         <p class="meta">Generate suggestions, review templates, and send follow-ups from one page.</p>
         <div class="hero-actions">
           <a class="btn btn-secondary" href="app.html">Back to Dashboard</a>
-          <button id="run-cadence" class="btn btn-secondary" type="button">Run cadence (hot 24h / warm 72h)</button>
+          <button id="run-cadence" class="btn btn-secondary" type="button">Run follow ups</button>
+          <button id="logout-button" class="btn btn-secondary" type="button">Logout</button>
         </div>
         <label>Select lead
           <select id="lead-select"></select>
@@ -29,6 +30,13 @@
           <textarea id="followup-body" rows="8"></textarea>
         </label>
         <button id="send-followup" class="btn btn-primary" type="button">Send follow-up</button>
+      </section>
+      <section class="panel form-panel">
+        <h2>Sent Log</h2>
+        <p class="meta">Recent follow-up activity from manual sends and Pro auto-send runs.</p>
+        <div id="sent-log" class="invite-list">
+          <p class="meta">No follow-up activity yet.</p>
+        </div>
       </section>
     </main>
     <script src="followups.js"></script>

@@ -11,6 +11,7 @@ let stream = null;
 let allLeadsCache = [];
 let cadenceDueCache = [];
 let lastTrackingUrl = '';
+let currentAccount = null;
 
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
@@ -346,6 +347,7 @@ async function loadLeadManager() {
 async function loadDashboard() {
   const me = await authedFetch('/api/auth/me');
   if (!me) return;
+  currentAccount = me;
 
   if (!me.onboardingComplete) {
     window.location.href = '/onboarding.html';
@@ -359,6 +361,16 @@ async function loadDashboard() {
 
   const firstName = String(me.user?.name || '').trim().split(/\s+/)[0] || 'Agent';
   document.getElementById('welcome-name').textContent = `Welcome, ${firstName}.`;
+  const isPro = me.subscription?.planId === 'pro';
+  const cadenceButton = document.getElementById('run-followup-cadence');
+  if (cadenceButton) {
+    cadenceButton.style.display = isPro ? '' : 'none';
+  }
+  if (!isPro) {
+    cadenceDueCache = [];
+    renderCadenceQueue();
+    setCadenceStatus('Pro plan only. Core uses manual follow-ups on the Follow-Ups page.');
+  }
 
   const data = await authedFetch('/api/dashboard');
   if (!data) return;
@@ -497,6 +509,10 @@ document.getElementById('send-followup')?.addEventListener('click', async () => 
 });
 
 document.getElementById('run-followup-cadence')?.addEventListener('click', async () => {
+  if (currentAccount?.subscription?.planId !== 'pro') {
+    setCadenceStatus('Run follow ups is available on the Pro plan only.', true);
+    return;
+  }
   try {
     const result = await authedFetch('/api/automation/followup-cadence', { method: 'POST' });
     if (!result) return;
@@ -582,5 +598,15 @@ for (const step of PIPELINE_STEPS) {
 clearLeadForm();
 renderCadenceQueue();
 setTrackingUrl('');
+document.getElementById('logout-button')?.addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch {}
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.href = '/login.html';
+});
 loadDashboard();
 connectRealtimeStream();

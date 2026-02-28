@@ -1,6 +1,5 @@
-const ADMIN_KEY_STORAGE = 'adminKey';
-
-const keyInput = document.getElementById('admin-key');
+const TOKEN_KEY = 'authToken';
+const token = localStorage.getItem(TOKEN_KEY);
 const messageNode = document.getElementById('admin-message');
 const inviteListNode = document.getElementById('invite-list');
 const templateKeyNode = document.getElementById('template-key');
@@ -9,12 +8,6 @@ const templateSubjectNode = document.getElementById('template-subject');
 const templateBodyNode = document.getElementById('template-body');
 
 let templateMap = new Map();
-
-keyInput.value = localStorage.getItem(ADMIN_KEY_STORAGE) || '';
-
-function currentKey() {
-  return keyInput.value.trim();
-}
 
 function setMessage(message, isError = false) {
   messageNode.textContent = message;
@@ -26,7 +19,7 @@ async function adminFetch(path, options = {}) {
     ...options,
     headers: {
       ...(options.headers || {}),
-      'x-admin-key': currentKey()
+      Authorization: `Bearer ${token}`
     }
   });
 
@@ -36,6 +29,11 @@ async function adminFetch(path, options = {}) {
   }
 
   const data = await response.json();
+  if (response.status === 401 || response.status === 403) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = '/login.html';
+    return null;
+  }
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
@@ -61,7 +59,7 @@ function renderInvites(invites) {
       <span class="meta">Status: ${invite.status}</span>
       <span class="meta">${sentAt}</span>
       <a class="meta" href="${invite.inviteUrl}" target="_blank" rel="noreferrer">Open invite link</a>
-      <button class="btn btn-secondary" data-send-id="${invite.id}">Mark sent</button>
+      <button class="btn btn-secondary" data-send-id="${invite.id}">Send invite email</button>
     `;
 
     inviteListNode.appendChild(card);
@@ -70,8 +68,10 @@ function renderInvites(invites) {
   document.querySelectorAll('[data-send-id]').forEach((button) => {
     button.addEventListener('click', async () => {
       try {
-        await adminFetch(`/api/admin/invites/${button.dataset.sendId}/send`, { method: 'POST' });
+        const result = await adminFetch(`/api/admin/invites/${button.dataset.sendId}/send`, { method: 'POST' });
+        if (!result) return;
         await loadInvites();
+        setMessage('Invite email sent.');
       } catch (error) {
         setMessage(error.message, true);
       }
@@ -104,15 +104,15 @@ function syncTemplateForm() {
   const defaults = {
     followup_hot: {
       subject: 'Next steps on your home search, {{firstName}}',
-      body: 'Hi {{firstName}},\\n\\nGreat connecting with you. I lined up 3 options that match what you asked for. Would you like a quick 10-minute call today to pick the best one and schedule tours?\\n\\n- Your agent'
+      body: 'Hi {{firstName}},\\n\\nGreat connecting with you. I lined up 3 options that match what you asked for. Would you like a quick 10-minute call today to pick the best one and schedule tours?\\n\\n- {{agentName}}'
     },
     followup_default: {
       subject: 'Quick follow-up on your search goals, {{firstName}}',
-      body: 'Hi {{firstName}},\\n\\nI wanted to quickly check in. If your timeline is still active, I can send a tighter shortlist based on your must-haves. Reply with your top priorities and target move date.\\n\\n- Your agent'
+      body: 'Hi {{firstName}},\\n\\nI wanted to quickly check in. If your timeline is still active, I can send a tighter shortlist based on your must-haves. Reply with your top priorities and target move date.\\n\\n- {{agentName}}'
     },
     nurture_monthly: {
       subject: 'Still searching, {{firstName}}?',
-      body: 'Hi {{leadName}},\\n\\nJust checking in with a light monthly update. If your home search is active again, reply with your top 2 priorities and we will line up options fast.\\n\\nNo rush at all. When timing is right, we are ready.\\n\\n- Your agent'
+      body: 'Hi {{leadName}},\\n\\nJust checking in with a light monthly update. If your home search is active again, reply with your top 2 priorities and we will line up options fast.\\n\\nNo rush at all. When timing is right, we are ready.\\n\\n- {{agentName}}'
     },
     digest_daily: {
       subject: "Today's Top 5 Leads",
@@ -141,11 +141,6 @@ function downloadCsv(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('save-admin-key').addEventListener('click', () => {
-  localStorage.setItem(ADMIN_KEY_STORAGE, currentKey());
-  setMessage('Admin key saved.');
-});
-
 document.getElementById('refresh-invites').addEventListener('click', async () => {
   try {
     await loadInvites();
@@ -159,6 +154,7 @@ document.getElementById('refresh-invites').addEventListener('click', async () =>
 document.getElementById('run-beta-reminders').addEventListener('click', async () => {
   try {
     const result = await adminFetch('/api/admin/automation/beta-ending-reminders', { method: 'POST' });
+    if (!result) return;
     setMessage(`Beta reminders run: sent ${result.sentCount}, skipped ${result.skippedCount}.`);
   } catch (error) {
     setMessage(error.message, true);
@@ -170,7 +166,7 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
   const form = new FormData(event.currentTarget);
 
   try {
-    await adminFetch('/api/admin/invites', {
+    const result = await adminFetch('/api/admin/invites', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -178,6 +174,7 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
         email: form.get('email')
       })
     });
+    if (!result) return;
 
     event.currentTarget.reset();
     await loadInvites();
@@ -194,16 +191,17 @@ document.getElementById('template-form').addEventListener('submit', async (event
   event.preventDefault();
 
   try {
-    const key = templateKeyNode.value;
-    await adminFetch(`/api/admin/templates/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        planScope: templatePlanScopeNode.value,
-        subject: templateSubjectNode.value,
-        body: templateBodyNode.value
-      })
-    });
+      const key = templateKeyNode.value;
+      const result = await adminFetch(`/api/admin/templates/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planScope: templatePlanScopeNode.value,
+          subject: templateSubjectNode.value,
+          body: templateBodyNode.value
+        })
+      });
+      if (!result) return;
 
     await loadTemplates();
     setMessage(`Template ${key} saved for ${templatePlanScopeNode.value}.`);
@@ -215,6 +213,7 @@ document.getElementById('template-form').addEventListener('submit', async (event
 document.getElementById('export-usage').addEventListener('click', async () => {
   try {
     const csv = await adminFetch('/api/admin/export/usage.csv');
+    if (!csv) return;
     downloadCsv('usage-export.csv', csv);
     setMessage('Usage CSV downloaded.');
   } catch (error) {
@@ -225,6 +224,7 @@ document.getElementById('export-usage').addEventListener('click', async () => {
 document.getElementById('export-leads').addEventListener('click', async () => {
   try {
     const csv = await adminFetch('/api/admin/export/leads.csv');
+    if (!csv) return;
     downloadCsv('leads-export.csv', csv);
     setMessage('Leads CSV downloaded.');
   } catch (error) {
@@ -235,6 +235,7 @@ document.getElementById('export-leads').addEventListener('click', async () => {
 document.getElementById('check-email-status').addEventListener('click', async () => {
   try {
     const data = await adminFetch('/api/admin/email/status');
+    if (!data) return;
     const smtp = data.smtp || {};
     setMessage(`SMTP mode: ${smtp.mode}. Host: ${smtp.host || 'n/a'}. From: ${smtp.from || 'n/a'}.`);
   } catch (error) {
@@ -251,6 +252,7 @@ document.getElementById('email-test-form').addEventListener('submit', async (eve
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to })
     });
+    if (!result) return;
     setMessage(`Test email sent in ${result.delivery.mode} mode. Message ID: ${result.delivery.messageId || 'n/a'}`);
   } catch (error) {
     setMessage(error.message, true);
@@ -258,8 +260,20 @@ document.getElementById('email-test-form').addEventListener('submit', async (eve
 });
 
 async function init() {
-  if (!currentKey()) return;
   try {
+    if (!token) {
+      window.location.href = '/login.html';
+      return;
+    }
+    const meResponse = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const me = await meResponse.json();
+    if (!meResponse.ok || me.user?.role !== 'admin') {
+      localStorage.removeItem(TOKEN_KEY);
+      window.location.href = '/login.html';
+      return;
+    }
     await loadInvites();
     await loadTemplates();
     setMessage('Admin ready.');
@@ -267,5 +281,16 @@ async function init() {
     setMessage(error.message, true);
   }
 }
+
+document.getElementById('logout-button').addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch {}
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.href = '/login.html';
+});
 
 init();

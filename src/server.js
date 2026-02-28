@@ -37,6 +37,7 @@ import {
   listTrackingLinksByLeadForUser,
   listUserEventsByType,
   touchUser,
+  updateUserRole,
   updateUserPasswordHash,
   updateLeadForUser,
   updateLeadSnapshot,
@@ -51,6 +52,9 @@ const isProduction = process.env.NODE_ENV === "production";
 const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const ADMIN_KEY = process.env.ADMIN_KEY || (!isProduction ? "beta-admin-2026" : "");
 const WEBHOOK_KEY = process.env.WEBHOOK_KEY || (!isProduction ? "lead-webhook-2026" : "");
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
+const ADMIN_NAME = String(process.env.ADMIN_NAME || "RealScoreAI Admin").trim();
 
 const sessions = new Map();
 const invites = new Map();
@@ -147,26 +151,26 @@ function sanitizeUser(user) {
   };
 }
 
-async function seedLeadsForUser(userId) {
-  const existing = await listLeadsByUser(userId);
-  if (existing.length > 0) return;
+async function ensureAdminUser() {
+  if (!ADMIN_EMAIL) return;
 
-  for (const lead of SEED_LEADS) {
-    const scored = calculateLeadScore(lead.signals);
-    await createLead({
-      userId,
-      name: lead.name,
-      email: lead.email,
-      phone: lead.phone,
-      status: lead.status,
-      score: scored.score,
-      bucket: scored.bucket,
-      signals: lead.signals,
-      behaviorTrend: "stable",
-      confidenceScore: 62,
-      lastActivityAt: lead.lastActivityAt
-    });
+  const existing = await getUserByEmail(ADMIN_EMAIL);
+  if (existing) {
+    if (String(existing.role || "").toLowerCase() !== "admin") {
+      await updateUserRole(existing.id, "admin", false);
+    }
+    return;
   }
+
+  if (!ADMIN_PASSWORD) return;
+
+  await createUser({
+    email: ADMIN_EMAIL,
+    passwordHash: hashPassword(ADMIN_PASSWORD),
+    name: ADMIN_NAME,
+    role: "admin",
+    betaFlag: false
+  });
 }
 
 async function getSubscriptionStatus(userId) {
@@ -228,11 +232,29 @@ async function requireActiveAccess(req, res, next) {
   return next();
 }
 
-function requireAdminKey(req, res, next) {
+async function requireAdminAccess(req, res, next) {
   const key = req.headers["x-admin-key"] || req.query.adminKey || "";
-  if (key !== ADMIN_KEY) {
-    return res.status(401).json({ error: "Invalid admin key." });
+  if (key && key === ADMIN_KEY) {
+    return next();
   }
+
+  const { token, session } = getSessionFromRequest(req);
+  if (!session) {
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  }
+
+  const user = await getUserById(session.userId);
+  if (!user) {
+    return res.status(401).json({ error: "Session is invalid." });
+  }
+
+  if (String(user.role || "").toLowerCase() !== "admin") {
+    return res.status(403).json({ error: "Admin access required." });
+  }
+
+  req.user = user;
+  req.token = token;
+  await touchUser(user.id);
   return next();
 }
 
@@ -571,11 +593,9 @@ app.post("/api/auth/register", async (req, res) => {
     email: normalizedEmail,
     passwordHash: hashPassword(password),
     name: String(name).trim(),
-    role: "beta",
+    role: normalizedEmail === ADMIN_EMAIL && !ADMIN_PASSWORD ? "admin" : "beta",
     betaFlag: true
   });
-
-  await seedLeadsForUser(user.id);
 
   await insertEvent({ userId: user.id, eventType: "login", metadata: { source: "register" } });
 
@@ -927,7 +947,13 @@ app.post("/api/leads/:leadId/send-follow-up", requireAuth, requireActiveAccess, 
     const subject = String(req.body?.subject || defaultSuggestion.subject);
     const body = String(req.body?.body || defaultSuggestion.body);
 
-    const delivery = await sendEmail({ to: lead.email, subject, text: body });
+    const delivery = await sendEmail({
+      to: lead.email,
+      subject,
+      text: body,
+      replyTo: req.user.email,
+      fromName: req.user.name
+    });
 
     await updateLeadSnapshot({
       ...lead,
@@ -1176,6 +1202,29 @@ app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, re
   });
 });
 
+app.get("/api/followups/sent-log", requireAuth, requireActiveAccess, async (req, res) => {
+  const [events, leads] = await Promise.all([
+    listUserEventsByType(req.user.id, "followup_sent", 50),
+    listLeadsByUser(req.user.id)
+  ]);
+
+  const leadNameById = new Map(leads.map((lead) => [lead.id, lead.name]));
+  const sentLog = events
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((event) => ({
+      id: event.id,
+      leadId: event.leadId,
+      leadName: leadNameById.get(event.leadId) || "Lead follow-up",
+      type: event.meta?.source === "followup_cadence_auto" ? "Auto follow-up" : "Manual follow-up",
+      mode: event.meta?.deliveryMode || "",
+      subject: event.meta?.subject || "",
+      createdAt: event.createdAt
+    }));
+
+  res.json({ sentLog });
+});
+
 app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
@@ -1203,7 +1252,13 @@ app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async
             leadName: lead.name
           });
           if (autoSendEnabled) {
-            await sendEmail({ to: lead.email, subject: templated.subject, text: templated.body });
+            await sendEmail({
+              to: lead.email,
+              subject: templated.subject,
+              text: templated.body,
+              replyTo: req.user.email,
+              fromName: req.user.name
+            });
             lead.lastNurtureEmailAt = new Date().toISOString();
             emailedLeadIds.push(lead.id);
             await insertEvent({ userId: req.user.id, leadId: lead.id, eventType: "nurture_email_sent", metadata: { mode: "auto" } });
@@ -1320,7 +1375,7 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
         "",
         "If you need anything at all or know anyone who could use help buying or selling, I am happy to help.",
         "",
-        `- ${String(req.user.name || "").trim() || "Your agent"}`
+        `- ${String(req.user.name || "").trim() || "RealScoreAI"}`
       ].join("\n");
 
       const templated = await resolveTemplateForPlan(req.subscription?.planId, "closed_followup_3m", fallbackSubject, fallbackBody, {
@@ -1332,7 +1387,9 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
         const delivery = await sendEmail({
           to: lead.email,
           subject: templated.subject,
-          text: templated.body
+          text: templated.body,
+          replyTo: req.user.email,
+          fromName: req.user.name
         });
 
         await insertEvent({
@@ -1384,6 +1441,9 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
 });
 
 app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, async (req, res) => {
+  if (!isProPlan(req.subscription?.planId)) {
+    return res.status(403).json({ error: "Follow-up automation is available on the Pro plan only." });
+  }
   const autoSendEnabled = isProPlan(req.subscription?.planId);
   const now = Date.now();
   const leads = await listLeadsByUser(req.user.id);
@@ -1392,12 +1452,14 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
 
   for (const lead of leads) {
     if (lead.score < 50) continue;
+    if (isLeadClosed(lead)) continue;
 
     const cadenceMs = lead.score >= 75 ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
     const cadenceLabel = lead.score >= 75 ? "24h" : "72h";
+    const hasFollowupHistory = Boolean(lead.lastSuggestedFollowUpAt);
     const baseline = lead.lastSuggestedFollowUpAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt;
     const baselineMs = baseline ? new Date(baseline).getTime() : 0;
-    const isDue = !baselineMs || now - baselineMs >= cadenceMs;
+    const isDue = !hasFollowupHistory || !baselineMs || now - baselineMs >= cadenceMs;
 
     if (!isDue) continue;
 
@@ -1423,7 +1485,9 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
       const delivery = await sendEmail({
         to: lead.email,
         subject: templated.subject,
-        text: templated.body
+        text: templated.body,
+        replyTo: req.user.email,
+        fromName: req.user.name
       });
 
       await insertEvent({
@@ -1476,7 +1540,7 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
   });
 });
 
-app.post("/api/admin/invites", requireAdminKey, (req, res) => {
+app.post("/api/admin/invites", requireAdminAccess, (req, res) => {
   const { email, name = "" } = req.body || {};
   if (!email) return res.status(400).json({ error: "email is required." });
 
@@ -1488,21 +1552,38 @@ app.post("/api/admin/invites", requireAdminKey, (req, res) => {
     name: String(name).trim(),
     status: "pending",
     createdAt: new Date().toISOString(),
-    inviteUrl: `http://localhost:3000/auth.html?email=${encodeURIComponent(cleanEmail)}`
+    inviteUrl: `${APP_URL}/signup.html?email=${encodeURIComponent(cleanEmail)}`
   };
 
   invites.set(invite.id, invite);
   return res.status(201).json({ ok: true, invite });
 });
 
-app.get("/api/admin/invites", requireAdminKey, (_req, res) => {
+app.get("/api/admin/invites", requireAdminAccess, (_req, res) => {
   const list = [...invites.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ invites: list });
 });
 
-app.post("/api/admin/invites/:inviteId/send", requireAdminKey, (req, res) => {
+app.post("/api/admin/invites/:inviteId/send", requireAdminAccess, async (req, res) => {
   const invite = invites.get(req.params.inviteId);
   if (!invite) return res.status(404).json({ error: "Invite not found." });
+
+  await sendEmail({
+    to: invite.email,
+    subject: "Your RealScoreAI invite",
+    text: [
+      `Hi ${invite.name || "there"},`,
+      "",
+      "You have been invited to try RealScoreAI.",
+      "",
+      `Create your account here: ${invite.inviteUrl}`,
+      "",
+      "Your lead scoring, dashboard, and follow-up workflow will be available after signup.",
+      "",
+      "- RealScoreAI"
+    ].join("\n"),
+    fromName: "RealScoreAI"
+  });
 
   invite.status = "sent";
   invite.sentAt = new Date().toISOString();
@@ -1510,15 +1591,15 @@ app.post("/api/admin/invites/:inviteId/send", requireAdminKey, (req, res) => {
   return res.json({ ok: true, invite });
 });
 
-app.get("/api/admin/metrics", requireAdminKey, async (_req, res) => {
+app.get("/api/admin/metrics", requireAdminAccess, async (_req, res) => {
   res.json(await getAdminMetrics());
 });
 
-app.get("/api/admin/email/status", requireAdminKey, async (_req, res) => {
+app.get("/api/admin/email/status", requireAdminAccess, async (_req, res) => {
   res.json({ smtp: getSmtpStatus() });
 });
 
-app.post("/api/admin/email/test", requireAdminKey, async (req, res) => {
+app.post("/api/admin/email/test", requireAdminAccess, async (req, res) => {
   try {
     const to = String(req.body?.to || "").trim();
     if (!to) {
@@ -1533,7 +1614,9 @@ app.post("/api/admin/email/test", requireAdminKey, async (req, res) => {
         "",
         `Environment: ${process.env.NODE_ENV || "development"}`,
         `Timestamp: ${new Date().toISOString()}`
-      ].join("\n")
+      ].join("\n"),
+      replyTo: req.user?.email || "",
+      fromName: req.user?.name || "RealScoreAI"
     });
 
     res.json({ ok: true, delivery: result, smtp: getSmtpStatus() });
@@ -1542,7 +1625,7 @@ app.post("/api/admin/email/test", requireAdminKey, async (req, res) => {
   }
 });
 
-app.get("/api/admin/templates", requireAdminKey, async (_req, res) => {
+app.get("/api/admin/templates", requireAdminAccess, async (_req, res) => {
   const requestedPlan = String(_req.query.plan || "all").trim().toLowerCase();
   const templates = await listTemplates();
   if (requestedPlan === "all") {
@@ -1556,7 +1639,7 @@ app.get("/api/admin/templates", requireAdminKey, async (_req, res) => {
   return res.json({ templates: filtered });
 });
 
-app.put("/api/admin/templates/:key", requireAdminKey, async (req, res) => {
+app.put("/api/admin/templates/:key", requireAdminAccess, async (req, res) => {
   const baseKey = String(req.params.key || "").trim();
   const subject = String(req.body?.subject || "").trim();
   const body = String(req.body?.body || "").trim();
@@ -1571,7 +1654,7 @@ app.put("/api/admin/templates/:key", requireAdminKey, async (req, res) => {
   res.json({ template: { ...template, baseKey, planScope } });
 });
 
-app.post("/api/admin/automation/beta-ending-reminders", requireAdminKey, async (_req, res) => {
+app.post("/api/admin/automation/beta-ending-reminders", requireAdminAccess, async (_req, res) => {
   const users = await listTrialingUsers();
   const now = Date.now();
   const sent = [];
@@ -1654,7 +1737,7 @@ app.post("/api/admin/automation/beta-ending-reminders", requireAdminKey, async (
   });
 });
 
-app.get("/api/admin/export/usage.csv", requireAdminKey, async (_req, res) => {
+app.get("/api/admin/export/usage.csv", requireAdminAccess, async (_req, res) => {
   const metrics = await getAdminMetrics();
   const rows = [
     {
@@ -1673,7 +1756,7 @@ app.get("/api/admin/export/usage.csv", requireAdminKey, async (_req, res) => {
   res.send(csv);
 });
 
-app.get("/api/admin/export/leads.csv", requireAdminKey, async (_req, res) => {
+app.get("/api/admin/export/leads.csv", requireAdminAccess, async (_req, res) => {
   const allLeads = [];
   const leads = await listAllLeads();
   for (const lead of leads) {
@@ -1737,6 +1820,7 @@ async function start() {
   }
 
   await runSchema();
+  await ensureAdminUser();
   app.listen(PORT, () => {
     console.log(`Lead engine running on http://localhost:${PORT}`);
   });

@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'authToken';
 const token = localStorage.getItem(TOKEN_KEY);
 if (!token) window.location.href = '/login.html';
+let account = null;
 
 function setMessage(message, isError = false) {
   const node = document.getElementById('closed-message');
@@ -17,8 +18,25 @@ async function authedFetch(path, options = {}) {
     }
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Request failed');
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.location.href = '/login.html';
+      return null;
+    }
+    throw new Error(data.error || 'Request failed');
+  }
   return data;
+}
+
+async function loadAccount() {
+  account = await authedFetch('/api/auth/me');
+  if (!account) return;
+  const runButton = document.getElementById('run-closed-followup');
+  if (runButton && account.subscription?.planId !== 'pro') {
+    runButton.style.display = 'none';
+    setMessage('Core plan does not run automatic closed-client follow-ups. Pro only.');
+  }
 }
 
 function formatDate(value) {
@@ -49,16 +67,33 @@ function renderClosed(leads) {
 
 async function loadClosed() {
   const data = await authedFetch('/api/leads/closed');
+  if (!data) return;
   renderClosed(data.closed || []);
 }
 
 document.getElementById('run-closed-followup').addEventListener('click', async () => {
+  if (account?.subscription?.planId !== 'pro') {
+    setMessage('Closed-client automation is available on the Pro plan only.', true);
+    return;
+  }
   try {
     const result = await authedFetch('/api/automation/closed-followup-3m', { method: 'POST' });
+    if (!result) return;
     setMessage(`3-month follow-up run complete. Sent ${result.sentCount}, skipped ${result.skippedCount}.`);
   } catch (error) {
     setMessage(error.message, true);
   }
 });
 
-loadClosed().catch((error) => setMessage(error.message, true));
+document.getElementById('logout-button').addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch {}
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.href = '/login.html';
+});
+
+Promise.all([loadAccount(), loadClosed()]).catch((error) => setMessage(error.message, true));

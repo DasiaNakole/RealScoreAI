@@ -17,7 +17,10 @@
           <h1>Today's Focus</h1>
           <p class="meta" id="welcome-name"></p>
         </div>
-        <a class="btn btn-secondary" href="portal.html">Back to Portal</a>
+        <div class="hero-actions">
+          <a class="btn btn-secondary" href="portal.html">Back to Portal</a>
+          <button id="logout-button" class="btn btn-secondary" type="button">Logout</button>
+        </div>
       </header>
 
       <section class="cards-grid">
@@ -113,10 +116,10 @@
 
       <section class="panel">
         <h2>Due for a follow up</h2>
-        <p id="cadence-status" class="meta">Run cadence to load leads due for a follow up here.</p>
+        <p id="cadence-status" class="meta">Pro plan only. Run follow ups to load leads due for a follow up here.</p>
         <div id="cadence-queue" class="invite-list"></div>
         <div class="hero-actions">
-          <button id="run-followup-cadence" class="btn btn-secondary" type="button">Run cadence (hot 24h / warm 72h)</button>
+          <button id="run-followup-cadence" class="btn btn-secondary" type="button">Run follow ups</button>
           <button id="load-tone-profile" class="btn btn-secondary" type="button">Load my tone profile</button>
           <a class="btn btn-secondary" href="followups.html">Open Follow-Ups Page</a>
           <a class="btn btn-secondary" href="closed.html">Open Closed Clients Page</a>
