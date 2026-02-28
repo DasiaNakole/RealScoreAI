@@ -361,7 +361,7 @@ async function loadDashboard() {
 
   const firstName = String(me.user?.name || '').trim().split(/\s+/)[0] || 'Agent';
   document.getElementById('welcome-name').textContent = `Welcome, ${firstName}.`;
-  const isPro = me.subscription?.planId === 'pro';
+  const isPro = String(me.subscription?.planId || '').trim().toLowerCase() === 'pro';
   const cadenceButton = document.getElementById('run-followup-cadence');
   if (cadenceButton) {
     cadenceButton.style.display = isPro ? '' : 'none';

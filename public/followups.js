@@ -66,7 +66,7 @@ async function authedFetch(path, options = {}) {
 async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
-  const isPro = account.subscription?.planId === 'pro';
+  const isPro = String(account.subscription?.planId || '').trim().toLowerCase() === 'pro';
   const runButton = document.getElementById('run-cadence');
   if (runButton) runButton.style.display = isPro ? '' : 'none';
   if (!isPro) {
@@ -106,7 +106,7 @@ document.getElementById('lead-select').addEventListener('change', () => {
 });
 
 document.getElementById('run-cadence').addEventListener('click', async () => {
-  if (account?.subscription?.planId !== 'pro') {
+  if (String(account?.subscription?.planId || '').trim().toLowerCase() !== 'pro') {
     setMessage('Run follow ups is available on the Pro plan only.', true);
     return;
   }
