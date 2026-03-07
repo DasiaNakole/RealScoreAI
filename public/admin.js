@@ -184,6 +184,30 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
   }
 });
 
+document.getElementById('demo-account-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    const result = await adminFetch('/api/admin/demo-accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: form.get('name'),
+        email: form.get('email'),
+        plan: form.get('plan'),
+        trialDays: Number(form.get('trialDays') || 30)
+      })
+    });
+    if (!result) return;
+
+    event.currentTarget.reset();
+    setMessage(`Demo account created for ${result.demoAccount.email} (${result.demoAccount.plan}). Setup email sent.`);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
 templateKeyNode.addEventListener('change', syncTemplateForm);
 templatePlanScopeNode.addEventListener('change', syncTemplateForm);
 

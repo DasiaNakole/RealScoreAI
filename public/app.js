@@ -13,12 +13,6 @@ let cadenceDueCache = [];
 let lastTrackingUrl = '';
 let currentAccount = null;
 
-function hasProPlan(account) {
-  return String(account?.subscription?.planId || '').trim().toLowerCase() === 'pro';
-}
-
-document.getElementById('run-followup-cadence')?.style && (document.getElementById('run-followup-cadence').style.display = 'none');
-
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
   replied: 0.35,
@@ -367,16 +361,9 @@ async function loadDashboard() {
 
   const firstName = String(me.user?.name || '').trim().split(/\s+/)[0] || 'Agent';
   document.getElementById('welcome-name').textContent = `Welcome, ${firstName}.`;
-  const isPro = hasProPlan(me);
-  const cadenceButton = document.getElementById('run-followup-cadence');
-  if (cadenceButton) {
-    cadenceButton.style.display = isPro ? '' : 'none';
-  }
-  if (!isPro) {
-    cadenceDueCache = [];
-    renderCadenceQueue();
-    setCadenceStatus('Pro plan only. Core uses manual follow-ups on the Follow-Ups page.');
-  }
+  cadenceDueCache = [];
+  renderCadenceQueue();
+  setCadenceStatus('Use the Follow-Ups page for manual sends. Pro users can run follow ups there.');
 
   const data = await authedFetch('/api/dashboard');
   if (!data) return;
@@ -511,31 +498,6 @@ document.getElementById('send-followup')?.addEventListener('click', async () => 
     }
   } catch (error) {
     setFollowUpStatus(error.message, true);
-  }
-});
-
-document.getElementById('run-followup-cadence')?.addEventListener('click', async () => {
-  if (!hasProPlan(currentAccount)) {
-    setCadenceStatus('Run follow ups is available on the Pro plan only.', true);
-    return;
-  }
-  try {
-    const result = await authedFetch('/api/automation/followup-cadence', { method: 'POST' });
-    if (!result) return;
-
-    if (!result.dueCount) {
-      cadenceDueCache = [];
-      renderCadenceQueue();
-      setCadenceStatus('No leads due for a follow up right now.');
-      return;
-    }
-
-    cadenceDueCache = result.due || [];
-    renderCadenceQueue();
-    setCadenceStatus(`${result.dueCount} lead(s) due for a follow up.`);
-    await loadDashboard();
-  } catch (error) {
-    setCadenceStatus(error.message, true);
   }
 });
 

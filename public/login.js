@@ -16,7 +16,11 @@ async function authRequest(path, payload) {
     body: JSON.stringify(payload)
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Request failed');
+  if (!response.ok) {
+    const error = new Error(data.error || 'Request failed');
+    error.code = data.code || '';
+    throw error;
+  }
   return data;
 }
 
@@ -67,7 +71,11 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
     localStorage.setItem(TOKEN_KEY, result.token);
     await routeAfterAuth(result.token);
   } catch (error) {
-    setMessage(error.message, true);
+    if (error.code === 'password_reset_required') {
+      setMessage('Password setup required. Use the setup email link or click Forgot password.', true);
+    } else {
+      setMessage(error.message, true);
+    }
   } finally {
     loginInFlight = false;
     if (submitButton) submitButton.disabled = false;
