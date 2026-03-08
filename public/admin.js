@@ -179,7 +179,8 @@ document.getElementById('run-beta-reminders').addEventListener('click', async ()
 
 document.getElementById('invite-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formEl = event.currentTarget;
+  const form = new FormData(formEl);
 
   try {
     const result = await adminFetch('/api/admin/invites', {
@@ -192,7 +193,7 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
     });
     if (!result) return;
 
-    event.currentTarget.reset();
+    formEl.reset();
     await loadInvites();
     setMessage('Invite created.');
   } catch (error) {
@@ -202,7 +203,8 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
 
 document.getElementById('demo-account-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formEl = event.currentTarget;
+  const form = new FormData(formEl);
 
   try {
     const result = await adminFetch('/api/admin/demo-accounts', {
@@ -217,7 +219,7 @@ document.getElementById('demo-account-form').addEventListener('submit', async (e
     });
     if (!result) return;
 
-    event.currentTarget.reset();
+    formEl.reset();
     setMessage(`Demo account created for ${result.demoAccount.email} (${result.demoAccount.plan}). Setup email sent.`);
   } catch (error) {
     setMessage(error.message, true);
