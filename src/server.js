@@ -1693,7 +1693,10 @@ app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
       email,
       passwordHash: hashPassword(tempPassword),
       name,
-      role: "demo_pending_reset",
+      // Keep role DB-compatible with existing users_role_check constraints.
+      // Access is still effectively blocked until reset because password is random
+      // and the setup link is emailed to the user.
+      role: "beta",
       betaFlag: true
     });
 
