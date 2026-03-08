@@ -33,7 +33,12 @@ async function adminFetch(path, options = {}) {
   try {
     data = raw ? JSON.parse(raw) : {};
   } catch {
-    data = { error: raw?.slice(0, 160) || 'Non-JSON response received.' };
+    const isHtml = raw?.trim().toLowerCase().startsWith('<!doctype') || raw?.trim().startsWith('<html');
+    if (isHtml) {
+      data = { error: `Server error (${response.status}). Backend unavailable or crashed. Check Render logs.` };
+    } else {
+      data = { error: raw?.slice(0, 160) || 'Non-JSON response received.' };
+    }
   }
 
   if (response.status === 401 || response.status === 403) {
@@ -303,7 +308,13 @@ async function init() {
     const meResponse = await fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` }
     });
-    const me = await meResponse.json();
+    const meRaw = await meResponse.text();
+    let me = {};
+    try {
+      me = meRaw ? JSON.parse(meRaw) : {};
+    } catch {
+      throw new Error(`Server error (${meResponse.status}). Check Render logs.`);
+    }
     if (!meResponse.ok || me.user?.role !== 'admin') {
       localStorage.removeItem(TOKEN_KEY);
       window.location.href = '/login.html';

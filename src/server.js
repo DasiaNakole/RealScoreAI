@@ -1640,96 +1640,104 @@ app.get("/api/admin/invites", requireAdminAccess, (_req, res) => {
 });
 
 app.post("/api/admin/invites/:inviteId/send", requireAdminAccess, async (req, res) => {
-  const invite = invites.get(req.params.inviteId);
-  if (!invite) return res.status(404).json({ error: "Invite not found." });
+  try {
+    const invite = invites.get(req.params.inviteId);
+    if (!invite) return res.status(404).json({ error: "Invite not found." });
 
-  await sendEmail({
-    to: invite.email,
-    subject: "Your RealScoreAI invite",
-    text: [
-      `Hi ${invite.name || "there"},`,
-      "",
-      "You have been invited to try RealScoreAI.",
-      "",
-      `Create your account here: ${invite.inviteUrl}`,
-      "",
-      "Your lead scoring, dashboard, and follow-up workflow will be available after signup.",
-      "",
-      "- RealScoreAI"
-    ].join("\n"),
-    fromName: "RealScoreAI"
-  });
+    await sendEmail({
+      to: invite.email,
+      subject: "Your RealScoreAI invite",
+      text: [
+        `Hi ${invite.name || "there"},`,
+        "",
+        "You have been invited to try RealScoreAI.",
+        "",
+        `Create your account here: ${invite.inviteUrl}`,
+        "",
+        "Your lead scoring, dashboard, and follow-up workflow will be available after signup.",
+        "",
+        "- RealScoreAI"
+      ].join("\n"),
+      fromName: "RealScoreAI"
+    });
 
-  invite.status = "sent";
-  invite.sentAt = new Date().toISOString();
-  invites.set(invite.id, invite);
-  return res.json({ ok: true, invite });
+    invite.status = "sent";
+    invite.sentAt = new Date().toISOString();
+    invites.set(invite.id, invite);
+    return res.json({ ok: true, invite });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to send invite email." });
+  }
 });
 
 app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const name = String(req.body?.name || "").trim();
-  const requestedPlan = String(req.body?.plan || "core").trim().toLowerCase();
-  const planId = requestedPlan === "pro" ? "pro" : "core";
-  const trialDaysRaw = Number(req.body?.trialDays || 30);
-  const trialDays = Number.isFinite(trialDaysRaw) ? Math.max(1, Math.min(90, Math.floor(trialDaysRaw))) : 30;
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const name = String(req.body?.name || "").trim();
+    const requestedPlan = String(req.body?.plan || "core").trim().toLowerCase();
+    const planId = requestedPlan === "pro" ? "pro" : "core";
+    const trialDaysRaw = Number(req.body?.trialDays || 30);
+    const trialDays = Number.isFinite(trialDaysRaw) ? Math.max(1, Math.min(90, Math.floor(trialDaysRaw))) : 30;
 
-  if (!email || !name) {
-    return res.status(400).json({ error: "name and email are required." });
+    if (!email || !name) {
+      return res.status(400).json({ error: "name and email are required." });
+    }
+
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: "A user with that email already exists." });
+    }
+
+    const tempPassword = crypto.randomBytes(32).toString("hex");
+    const user = await createUser({
+      email,
+      passwordHash: hashPassword(tempPassword),
+      name,
+      role: "demo_pending_reset",
+      betaFlag: true
+    });
+
+    const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+    await upsertSubscription({
+      userId: user.id,
+      plan: planId,
+      status: "trialing",
+      trialEndsAt
+    });
+
+    const token = createPasswordResetToken(user.id, 24 * 60 * 60 * 1000);
+    const resetLink = `${APP_URL}/reset-password.html?token=${encodeURIComponent(token)}`;
+
+    await sendEmail({
+      to: email,
+      subject: `Your RealScoreAI ${planId.toUpperCase()} demo account`,
+      text: [
+        `Hi ${name.split(" ")[0] || "there"},`,
+        "",
+        `Your RealScoreAI ${planId.toUpperCase()} demo account is ready.`,
+        "Set your password here to activate login:",
+        resetLink,
+        "",
+        "This setup link expires in 24 hours. If it expires, use Forgot password on the login page.",
+        "",
+        "- RealScoreAI"
+      ].join("\n"),
+      fromName: "RealScoreAI"
+    });
+
+    await insertEvent({
+      userId: user.id,
+      eventType: "demo_account_created",
+      metadata: { plan: planId, trialDays, trialEndsAt }
+    });
+
+    res.status(201).json({
+      ok: true,
+      demoAccount: { email, name, plan: planId, trialDays, trialEndsAt }
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to create demo account." });
   }
-
-  const existing = await getUserByEmail(email);
-  if (existing) {
-    return res.status(409).json({ error: "A user with that email already exists." });
-  }
-
-  const tempPassword = crypto.randomBytes(32).toString("hex");
-  const user = await createUser({
-    email,
-    passwordHash: hashPassword(tempPassword),
-    name,
-    role: "demo_pending_reset",
-    betaFlag: true
-  });
-
-  const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
-  await upsertSubscription({
-    userId: user.id,
-    plan: planId,
-    status: "trialing",
-    trialEndsAt
-  });
-
-  const token = createPasswordResetToken(user.id, 24 * 60 * 60 * 1000);
-  const resetLink = `${APP_URL}/reset-password.html?token=${encodeURIComponent(token)}`;
-
-  await sendEmail({
-    to: email,
-    subject: `Your RealScoreAI ${planId.toUpperCase()} demo account`,
-    text: [
-      `Hi ${name.split(" ")[0] || "there"},`,
-      "",
-      `Your RealScoreAI ${planId.toUpperCase()} demo account is ready.`,
-      "Set your password here to activate login:",
-      resetLink,
-      "",
-      "This setup link expires in 24 hours. If it expires, use Forgot password on the login page.",
-      "",
-      "- RealScoreAI"
-    ].join("\n"),
-    fromName: "RealScoreAI"
-  });
-
-  await insertEvent({
-    userId: user.id,
-    eventType: "demo_account_created",
-    metadata: { plan: planId, trialDays, trialEndsAt }
-  });
-
-  res.status(201).json({
-    ok: true,
-    demoAccount: { email, name, plan: planId, trialDays, trialEndsAt }
-  });
 });
 
 app.get("/api/admin/metrics", requireAdminAccess, async (_req, res) => {
@@ -1796,10 +1804,11 @@ app.put("/api/admin/templates/:key", requireAdminAccess, async (req, res) => {
 });
 
 app.post("/api/admin/automation/beta-ending-reminders", requireAdminAccess, async (_req, res) => {
-  const users = await listTrialingUsers();
-  const now = Date.now();
-  const sent = [];
-  const skipped = [];
+  try {
+    const users = await listTrialingUsers();
+    const now = Date.now();
+    const sent = [];
+    const skipped = [];
 
   for (const user of users) {
     if (!user.beta_flag) {
@@ -1868,14 +1877,17 @@ app.post("/api/admin/automation/beta-ending-reminders", requireAdminAccess, asyn
     });
   }
 
-  res.json({
-    job: "beta_ending_reminders",
-    totalTrialing: users.length,
-    sentCount: sent.length,
-    skippedCount: skipped.length,
-    sent,
-    skipped
-  });
+    res.json({
+      job: "beta_ending_reminders",
+      totalTrialing: users.length,
+      sentCount: sent.length,
+      skippedCount: skipped.length,
+      sent,
+      skipped
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Failed to run beta reminders." });
+  }
 });
 
 app.get("/api/admin/export/usage.csv", requireAdminAccess, async (_req, res) => {
