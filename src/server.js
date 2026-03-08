@@ -180,6 +180,40 @@ async function ensureAdminUser() {
   });
 }
 
+async function loadDemoLeadsForUser(userId, { force = false } = {}) {
+  const existing = await listLeadsByUser(userId);
+  if (existing.length > 0 && !force) {
+    return { createdCount: 0, skipped: true };
+  }
+
+  if (force && existing.length > 0) {
+    for (const lead of existing) {
+      await deleteLeadForUser(lead.id, userId);
+    }
+  }
+
+  let createdCount = 0;
+  for (const lead of SEED_LEADS) {
+    const scored = calculateLeadScore(lead.signals);
+    await createLead({
+      userId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      status: lead.status,
+      score: scored.score,
+      bucket: scored.bucket,
+      signals: lead.signals,
+      behaviorTrend: "stable",
+      confidenceScore: 62,
+      lastActivityAt: lead.lastActivityAt
+    });
+    createdCount += 1;
+  }
+
+  return { createdCount, skipped: false };
+}
+
 async function getSubscriptionStatus(userId) {
   const subscription = await getSubscriptionByUserId(userId);
   if (!subscription) {
@@ -894,7 +928,8 @@ app.get("/api/leads/:leadId/suggested-follow-up", requireAuth, requireActiveAcce
   const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
     firstName,
     leadName: lead.name,
-    score: lead.score
+    score: lead.score,
+    agentName: req.user.name || "RealScoreAI"
   });
 
   res.json({
@@ -902,6 +937,26 @@ app.get("/api/leads/:leadId/suggested-follow-up", requireAuth, requireActiveAcce
     isHighPriority: lead.score >= 75,
     score: lead.score,
     suggestion: { subject: templated.subject, body: templated.body }
+  });
+});
+
+app.post("/api/leads/load-demo", requireAuth, requireActiveAccess, async (req, res) => {
+  const force = Boolean(req.body?.force);
+  const result = await loadDemoLeadsForUser(req.user.id, { force });
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "demo_leads_loaded",
+    metadata: { force, createdCount: result.createdCount, skipped: result.skipped }
+  });
+
+  res.json({
+    ok: true,
+    createdCount: result.createdCount,
+    skipped: result.skipped,
+    message: result.skipped
+      ? "You already have leads. Clear existing leads first or use force load."
+      : `Loaded ${result.createdCount} demo leads.`
   });
 });
 
@@ -1265,7 +1320,8 @@ app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async
           const firstName = String(lead.name || "").split(" ")[0] || "there";
           const templated = await resolveTemplateForPlan(req.subscription?.planId, "nurture_monthly", fallback.subject, fallback.text, {
             firstName,
-            leadName: lead.name
+            leadName: lead.name,
+            agentName: req.user.name || "RealScoreAI"
           });
           if (autoSendEnabled) {
             await sendEmail({
@@ -1340,7 +1396,8 @@ app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async
     const firstName = String(req.user.name || "").split(" ")[0] || "there";
     const templated = await resolveTemplateForPlan(req.subscription?.planId, "digest_daily", fallback.subject, fallback.text, {
       firstName,
-      leadList
+      leadList,
+      agentName: req.user.name || "RealScoreAI"
     });
     const delivery = await sendEmail({ to: req.user.email, subject: templated.subject, text: templated.body });
 
@@ -1396,7 +1453,8 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
 
       const templated = await resolveTemplateForPlan(req.subscription?.planId, "closed_followup_3m", fallbackSubject, fallbackBody, {
         firstName,
-        leadName: lead.name
+        leadName: lead.name,
+        agentName: req.user.name || "RealScoreAI"
       });
 
       if (autoSendEnabled) {
@@ -1485,7 +1543,8 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
     const templated = await resolveTemplateForPlan(req.subscription?.planId, templateKey, fallback.subject, fallback.body, {
       firstName,
       leadName: lead.name,
-      score: lead.score
+      score: lead.score,
+      agentName: req.user.name || "RealScoreAI"
     });
 
     due.push({

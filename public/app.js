@@ -419,6 +419,24 @@ document.getElementById('lead-cancel').addEventListener('click', () => {
   setLeadManagerStatus('Lead form cleared.');
 });
 
+document.getElementById('load-demo-leads')?.addEventListener('click', async () => {
+  const force = confirm('Load demo leads now? Click OK to replace existing leads, or Cancel to add only if account is empty.');
+  try {
+    const result = await authedFetch('/api/leads/load-demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force })
+    });
+    if (!result) return;
+
+    setLeadManagerStatus(result.message || `Loaded ${result.createdCount || 0} demo leads.`);
+    clearLeadForm();
+    await loadDashboard();
+  } catch (error) {
+    setLeadManagerStatus(error.message, true);
+  }
+});
+
 document.getElementById('lead-form').addEventListener('submit', async (event) => {
   event.preventDefault();
 
