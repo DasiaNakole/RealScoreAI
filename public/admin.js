@@ -28,13 +28,24 @@ async function adminFetch(path, options = {}) {
     return response.text();
   }
 
-  const data = await response.json();
+  const raw = await response.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { error: raw?.slice(0, 160) || 'Non-JSON response received.' };
+  }
+
   if (response.status === 401 || response.status === 403) {
     localStorage.removeItem(TOKEN_KEY);
     window.location.href = '/login.html';
     return null;
   }
-  if (!response.ok) throw new Error(data.error || 'Request failed');
+
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed (${response.status}).`);
+  }
+
   return data;
 }
 
