@@ -4,7 +4,7 @@ import cors from "cors";
 
 import { applyLeadEvent } from "./scoring/pipeline.js";
 import { calculateLeadScore } from "./scoring/engine.js";
-import { listPlans, plans } from "./billing/plans.js";
+import { getPlan, hasAutomationAccess, listPlans, plans, resolvePlanId } from "./billing/plans.js";
 import { createCheckoutSession } from "./billing/stripe.js";
 import { classifyIntentFromMessage } from "./ai/intelligence.js";
 import { buildSuggestedFollowUp, buildDailyDigestEmail, buildMonthlyNurtureEmail, buildBetaEndingReminderEmail } from "./email/templates.js";
@@ -194,7 +194,7 @@ async function loadDemoLeadsForUser(userId, { force = false } = {}) {
 
   let createdCount = 0;
   for (const lead of SEED_LEADS) {
-    const scored = calculateLeadScore(lead.signals);
+    const scored = calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress });
     await createLead({
       userId,
       name: lead.name,
@@ -418,10 +418,39 @@ function normalizeLeadStage(stage) {
   return legacy[value] || value || "consultation";
 }
 
+function normalizeOptionalIsoDate(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function daysSince(value) {
+  if (!value) return null;
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return null;
+  return Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
+}
+
 function isLeadClosed(lead) {
   const progress = normalizePipelineProgress(lead.pipelineProgress);
   const stage = normalizeLeadStage(lead.stage);
   return Boolean(progress.closed || stage === "closed");
+}
+
+function buildSuggestedAttentionAction(lead, daysSinceContact) {
+  if ((daysSinceContact ?? 0) >= 5) return "Follow up now";
+  if (!lead.preapproved && lead.hasEba) return "Check in on financing/preapproval";
+  if (lead.signals?.messageIntent === "hot") return "Send listings";
+  if (lead.score >= 70) return "Check in";
+  return "Follow up";
+}
+
+function buildLastActivityLabel(days) {
+  if (days === null) return "No activity recorded";
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
 }
 
 function renderTemplateString(template, vars) {
@@ -444,24 +473,16 @@ async function resolveTemplate(key, fallbackSubject, fallbackBody, vars) {
 
 function getPlanScopedTemplateKey(key, planScope) {
   const cleanKey = String(key || "").trim();
-  const cleanScope = String(planScope || "all").trim().toLowerCase();
-  if (cleanScope === "core" || cleanScope === "pro") {
+  const cleanScope = resolvePlanId(planScope);
+  if (cleanScope && plans[cleanScope]) {
     return `${cleanKey}__${cleanScope}`;
   }
   return cleanKey;
 }
 
-function normalizePlanId(planId) {
-  return String(planId || "").trim().toLowerCase();
-}
-
-function isProPlan(planId) {
-  return normalizePlanId(planId) === "pro";
-}
-
 async function resolveTemplateForPlan(planId, key, fallbackSubject, fallbackBody, vars) {
-  const normalizedPlan = normalizePlanId(planId);
-  const planScopedKey = normalizedPlan === "core" || normalizedPlan === "pro"
+  const normalizedPlan = resolvePlanId(planId);
+  const planScopedKey = plans[normalizedPlan]
     ? `${key}__${normalizedPlan}`
     : key;
 
@@ -523,7 +544,7 @@ async function hydrateLead(lead) {
   return {
     ...lead,
     events,
-    whyScore: calculateLeadScore(lead.signals).whyScore
+    whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore
   };
 }
 
@@ -534,6 +555,9 @@ async function applyAndPersistLeadEvent(lead, event, userId) {
   const persisted = await updateLeadSnapshot({
     id: updated.id,
     stage: updated.stage,
+    source: lead.source,
+    notes: lead.notes,
+    lastContactedAt: lead.lastContactedAt,
     score: updated.score,
     bucket: updated.bucket,
     signals: updated.signals,
@@ -805,25 +829,27 @@ app.get("/api/billing/status", requireAuth, async (req, res) => {
 
 app.post("/api/billing/start-trial", requireAuth, async (req, res) => {
   const { planId, cardholderName, paymentMethodLast4 } = req.body || {};
-  if (!planId || !plans[planId]) {
+  const selectedPlan = getPlan(planId);
+  if (!selectedPlan) {
     return res.status(400).json({ error: "Valid planId is required." });
   }
   if (!cardholderName || !paymentMethodLast4) {
     return res.status(400).json({ error: "Payment details are required to start trial." });
   }
 
-  const trialEnds = new Date(Date.now() + plans[planId].trialDays * 24 * 60 * 60 * 1000).toISOString();
+  const normalizedPlanId = resolvePlanId(planId);
+  const trialEnds = new Date(Date.now() + selectedPlan.trialDays * 24 * 60 * 60 * 1000).toISOString();
 
   const subscription = await upsertSubscription({
     userId: req.user.id,
-    plan: planId,
+    plan: normalizedPlanId,
     status: "trialing",
     paymentMethodLast4: String(paymentMethodLast4).slice(-4),
     cardholderName: String(cardholderName).trim(),
     trialEndsAt: trialEnds
   });
 
-  await insertEvent({ userId: req.user.id, eventType: "subscription_started", metadata: { plan: planId, status: "trialing" } });
+  await insertEvent({ userId: req.user.id, eventType: "subscription_started", metadata: { plan: normalizedPlanId, status: "trialing" } });
 
   res.status(201).json({
     ok: true,
@@ -877,7 +903,7 @@ app.get("/api/ai/classify-intent", requireAuth, requireActiveAccess, (req, res) 
 
 app.get("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
   const leads = await listLeadsByUser(req.user.id);
-  res.json({ leads: leads.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })) });
+  res.json({ leads: leads.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore })) });
 });
 
 app.get("/api/leads/closed", requireAuth, requireActiveAccess, async (req, res) => {
@@ -898,14 +924,14 @@ app.get("/api/leads/closed", requireAuth, requireActiveAccess, async (req, res) 
 app.get("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {
   const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
   if (!lead) return res.status(404).json({ error: "Lead not found" });
-  res.json({ lead: { ...lead, whyScore: calculateLeadScore(lead.signals).whyScore } });
+  res.json({ lead: { ...lead, whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore } });
 });
 
 app.get("/api/leads/:leadId/explanation", requireAuth, requireActiveAccess, async (req, res) => {
   const lead = await getLeadByIdForUser(req.params.leadId, req.user.id);
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
-  const scored = calculateLeadScore(lead.signals);
+  const scored = calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress });
   res.json({
     leadId: lead.id,
     score: lead.score,
@@ -1028,7 +1054,8 @@ app.post("/api/leads/:leadId/send-follow-up", requireAuth, requireActiveAccess, 
 
     await updateLeadSnapshot({
       ...lead,
-      lastSuggestedFollowUpAt: new Date().toISOString()
+      lastSuggestedFollowUpAt: new Date().toISOString(),
+      lastContactedAt: new Date().toISOString()
     });
 
     await insertEvent({
@@ -1049,6 +1076,9 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     name,
     email,
     phone = null,
+    source = null,
+    notes = null,
+    lastContactedAt = null,
     stage = "consultation",
     responseTimeMinutes = 60,
     messageIntent = "unknown",
@@ -1073,13 +1103,17 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
   const closedAt = normalizedProgress.closed || normalizedStage === "closed"
     ? new Date().toISOString()
     : null;
+  const normalizedLastContactedAt = normalizeOptionalIsoDate(lastContactedAt);
 
-  const scored = calculateLeadScore(signals);
+  const scored = calculateLeadScore(signals, { pipelineProgress: normalizedProgress });
   const lead = await createLead({
     userId: req.user.id,
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
     phone: phone ? String(phone).trim() : null,
+    source: source ? String(source).trim() : null,
+    notes: notes ? String(notes).trim() : null,
+    lastContactedAt: normalizedLastContactedAt,
     status: normalizedStage,
     score: scored.score,
     bucket: scored.bucket,
@@ -1095,7 +1129,7 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
     userId: req.user.id,
     leadId: lead.id,
     eventType: "lead_created",
-    metadata: { source: "manual_create" }
+    metadata: { source: "manual_create", leadSource: source ? String(source).trim() : null }
   });
 
   res.status(201).json({ lead: { ...lead, whyScore: scored.whyScore } });
@@ -1110,6 +1144,11 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     name: String(req.body?.name ?? existing.name).trim(),
     email: String(req.body?.email ?? existing.email).trim().toLowerCase(),
     phone: req.body?.phone !== undefined ? String(req.body.phone || "").trim() || null : existing.phone,
+    source: req.body?.source !== undefined ? String(req.body.source || "").trim() || null : existing.source,
+    notes: req.body?.notes !== undefined ? String(req.body.notes || "").trim() || null : existing.notes,
+    lastContactedAt: req.body?.lastContactedAt !== undefined
+      ? normalizeOptionalIsoDate(req.body.lastContactedAt)
+      : existing.lastContactedAt,
     stage: normalizeLeadStage(String(req.body?.stage ?? existing.stage)),
     pipelineProgress: normalizePipelineProgress(req.body?.pipelineProgress ?? existing.pipelineProgress),
     signals: {
@@ -1123,7 +1162,7 @@ app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res)
     }
   };
 
-  const scored = calculateLeadScore(merged.signals);
+  const scored = calculateLeadScore(merged.signals, { pipelineProgress: merged.pipelineProgress });
   const shouldClose = merged.pipelineProgress.closed || merged.stage === "closed";
   const closedAt = shouldClose ? (existing.closedAt || new Date().toISOString()) : null;
   const updated = await updateLeadForUser(existing.id, req.user.id, {
@@ -1233,6 +1272,25 @@ app.get("/api/dashboard", requireAuth, requireActiveAccess, async (req, res) => 
   };
 
   const enriched = openLeads.map(enrich);
+  const attentionLeads = enriched
+    .map((lead) => {
+      const lastContactAt = lead.lastContactedAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt;
+      const daysSinceContact = daysSince(lastContactAt);
+      const needsAttention = (daysSinceContact ?? 0) >= 3 || lead.score >= 70;
+      const priorityWeight = (daysSinceContact ?? 0) * 3 + lead.score;
+      return {
+        ...lead,
+        lastContactAt,
+        daysSinceContact,
+        needsAttention,
+        priorityWeight,
+        suggestedAction: buildSuggestedAttentionAction(lead, daysSinceContact),
+        lastActivityLabel: buildLastActivityLabel(daysSinceContact)
+      };
+    })
+    .filter((lead) => lead.needsAttention)
+    .sort((a, b) => b.priorityWeight - a.priorityWeight)
+    .slice(0, 5);
   const top5 = enriched
     .filter((lead) => lead.hasEba && lead.preapproved)
     .sort((a, b) => b.stageRank - a.stageRank || b.score - a.score)
@@ -1249,13 +1307,19 @@ app.get("/api/dashboard", requireAuth, requireActiveAccess, async (req, res) => 
   await insertEvent({
     userId: req.user.id,
     eventType: "dashboard_viewed",
-    metadata: { top5: top5.length, onDeck: onDeck.length, potentials: potentials.length }
+    metadata: { top5: top5.length, onDeck: onDeck.length, potentials: potentials.length, needsAttention: attentionLeads.length }
   });
 
   res.json({
-    top5: top5.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
-    onDeck: onDeck.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore })),
-    potentials: potentials.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals).whyScore }))
+    pickupSummary: {
+      message: attentionLeads.length
+        ? `${attentionLeads.length} lead${attentionLeads.length === 1 ? "" : "s"} need attention today.`
+        : "No urgent follow-ups right now.",
+      leads: attentionLeads
+    },
+    top5: top5.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore })),
+    onDeck: onDeck.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore })),
+    potentials: potentials.map((lead) => ({ ...lead, whyScore: calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress }).whyScore }))
   });
 });
 
@@ -1299,7 +1363,7 @@ app.get("/api/followups/sent-log", requireAuth, requireActiveAccess, async (req,
 app.post("/api/automation/auto-nurture", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
-    const autoSendEnabled = isProPlan(req.subscription?.planId);
+    const autoSendEnabled = hasAutomationAccess(req.subscription?.planId);
     const movedLeadIds = [];
     const emailedLeadIds = [];
     const manualReviewLeadIds = [];
@@ -1384,15 +1448,33 @@ app.post("/api/automation/weekly-reactivation", requireAuth, requireActiveAccess
 app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
-    const top = leads.slice().sort((a, b) => b.score - a.score).slice(0, 5).map((lead) => ({
-      id: lead.id,
-      name: lead.name,
-      score: lead.score,
-      reason: calculateLeadScore(lead.signals).whyScore.summary
-    }));
+    const top = leads
+      .filter((lead) => !isLeadClosed(lead))
+      .map((lead) => {
+        const days = daysSince(lead.lastContactedAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt);
+        const progress = normalizePipelineProgress(lead.pipelineProgress);
+        const needsAttention = (days ?? 0) >= 3 || lead.score >= 70;
+        return {
+          id: lead.id,
+          name: lead.name,
+          score: lead.score,
+          days,
+          needsAttention,
+          suggestedAction: buildSuggestedAttentionAction({
+            ...lead,
+            preapproved: Boolean(progress.preapproval),
+            hasEba: Boolean(progress.exclusive_buyer_agreement)
+          }, days)
+        };
+      })
+      .filter((lead) => lead.needsAttention)
+      .sort((a, b) => ((b.days ?? 0) * 3 + b.score) - ((a.days ?? 0) * 3 + a.score))
+      .slice(0, 5);
 
     const fallback = buildDailyDigestEmail(req.user.name, top);
-    const leadList = top.map((lead, idx) => `${idx + 1}. ${lead.name} (Score ${lead.score}) - ${lead.reason}`).join("\n");
+    const leadList = top
+      .map((lead, idx) => `${idx + 1}. ${lead.name} (Score ${lead.score}) - ${lead.suggestedAction}; last contact ${buildLastActivityLabel(lead.days)}`)
+      .join("\n");
     const firstName = String(req.user.name || "").split(" ")[0] || "there";
     const templated = await resolveTemplateForPlan(req.subscription?.planId, "digest_daily", fallback.subject, fallback.text, {
       firstName,
@@ -1412,7 +1494,7 @@ app.post("/api/automation/daily-digest", requireAuth, requireActiveAccess, async
 app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess, async (req, res) => {
   try {
     const leads = await listLeadsByUser(req.user.id);
-    const autoSendEnabled = isProPlan(req.subscription?.planId);
+    const autoSendEnabled = hasAutomationAccess(req.subscription?.planId);
     const now = Date.now();
     const sent = [];
     const dueManualReview = [];
@@ -1515,10 +1597,10 @@ app.post("/api/automation/closed-followup-3m", requireAuth, requireActiveAccess,
 });
 
 app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, async (req, res) => {
-  if (!isProPlan(req.subscription?.planId)) {
-    return res.status(403).json({ error: "Follow-up automation is available on the Pro plan only." });
+  if (!hasAutomationAccess(req.subscription?.planId)) {
+    return res.status(403).json({ error: "Follow-up automation is available on Silver and Gold plans." });
   }
-  const autoSendEnabled = isProPlan(req.subscription?.planId);
+  const autoSendEnabled = hasAutomationAccess(req.subscription?.planId);
   const now = Date.now();
   const leads = await listLeadsByUser(req.user.id);
   const due = [];
@@ -1531,7 +1613,7 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
     const cadenceMs = lead.score >= 75 ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
     const cadenceLabel = lead.score >= 75 ? "24h" : "72h";
     const hasFollowupHistory = Boolean(lead.lastSuggestedFollowUpAt);
-    const baseline = lead.lastSuggestedFollowUpAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt;
+    const baseline = lead.lastSuggestedFollowUpAt || lead.lastContactedAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt;
     const baselineMs = baseline ? new Date(baseline).getTime() : 0;
     const isDue = !hasFollowupHistory || !baselineMs || now - baselineMs >= cadenceMs;
 
@@ -1586,7 +1668,8 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
 
     await updateLeadSnapshot({
       ...lead,
-      lastSuggestedFollowUpAt: new Date().toISOString()
+      lastSuggestedFollowUpAt: new Date().toISOString(),
+      lastContactedAt: autoSendEnabled ? new Date().toISOString() : lead.lastContactedAt
     });
 
     await insertEvent({
@@ -1674,8 +1757,11 @@ app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
     const name = String(req.body?.name || "").trim();
-    const requestedPlan = String(req.body?.plan || "core").trim().toLowerCase();
-    const planId = requestedPlan === "pro" ? "pro" : "core";
+    const requestedPlan = String(req.body?.plan || "bronze").trim().toLowerCase();
+    const planId = resolvePlanId(requestedPlan);
+    if (!plans[planId]) {
+      return res.status(400).json({ error: "Valid plan is required." });
+    }
     const trialDaysRaw = Number(req.body?.trialDays || 30);
     const trialDays = Number.isFinite(trialDaysRaw) ? Math.max(1, Math.min(90, Math.floor(trialDaysRaw))) : 30;
 
@@ -1778,10 +1864,15 @@ app.post("/api/admin/email/test", requireAdminAccess, async (req, res) => {
 });
 
 app.get("/api/admin/templates", requireAdminAccess, async (_req, res) => {
-  const requestedPlan = String(_req.query.plan || "all").trim().toLowerCase();
+  const requestedPlanRaw = String(_req.query.plan || "all").trim().toLowerCase();
+  const requestedPlan = requestedPlanRaw === "all" ? "all" : resolvePlanId(requestedPlanRaw);
   const templates = await listTemplates();
   if (requestedPlan === "all") {
     return res.json({ templates });
+  }
+
+  if (!plans[requestedPlan]) {
+    return res.status(400).json({ error: "Invalid plan scope." });
   }
 
   const suffix = `__${requestedPlan}`;
@@ -1921,6 +2012,9 @@ app.get("/api/admin/export/leads.csv", requireAdminAccess, async (_req, res) => 
       user_id: lead.userId,
       lead_name: lead.name,
       email: lead.email,
+      source: lead.source,
+      notes: lead.notes,
+      last_contacted_at: lead.lastContactedAt,
       status: lead.stage,
       score: lead.score,
       bucket: lead.bucket,
@@ -1940,6 +2034,9 @@ app.get("/api/admin/export/leads.csv", requireAdminAccess, async (_req, res) => 
     "user_id",
     "lead_name",
     "email",
+    "source",
+    "notes",
+    "last_contacted_at",
     "status",
     "score",
     "bucket",

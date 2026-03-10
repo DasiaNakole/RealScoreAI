@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { plans } from "./plans.js";
+import { getPlan } from "./plans.js";
 const isProduction = process.env.NODE_ENV === "production";
 const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -10,9 +10,9 @@ function getStripeClient() {
 }
 
 export async function createCheckoutSession({ planId, customerEmail }) {
-  const selected = plans[planId];
+  const selected = getPlan(planId);
   if (!selected) {
-    throw new Error("Invalid planId. Use core or pro.");
+    throw new Error("Invalid planId. Use bronze, silver, or gold.");
   }
 
   const stripe = getStripeClient();

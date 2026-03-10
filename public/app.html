@@ -23,6 +23,12 @@
         </div>
       </header>
 
+      <section class="panel">
+        <h2>Pick up where you left off</h2>
+        <p id="pickup-summary-message" class="meta">Checking your lead activity...</p>
+        <div id="pickup-summary-list" class="invite-list"></div>
+      </section>
+
       <section class="cards-grid">
         <article class="panel">
           <h2 class="small-heading">Top 5 Clients (active)</h2>
@@ -48,6 +54,13 @@
           <label>Name <input id="lead-name" required /></label>
           <label>Email <input id="lead-email" type="email" required /></label>
           <label>Phone <input id="lead-phone" /></label>
+          <label>Source <input id="lead-source" placeholder="Zillow, referral, open house" /></label>
+          <label>Last contacted
+            <input id="lead-last-contacted" type="date" />
+          </label>
+          <label class="full-width">Notes
+            <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
+          </label>
           <label>Status
             <select id="lead-stage">
               <option value="consultation">Consultation</option>
@@ -117,7 +130,7 @@
 
       <section class="panel">
         <h2>Due for a follow up</h2>
-        <p id="cadence-status" class="meta">Pro plan only. Run follow ups to load leads due for a follow up here.</p>
+        <p id="cadence-status" class="meta">Silver and Gold plans support follow-up automation. Bronze uses manual follow-ups.</p>
         <div id="cadence-queue" class="invite-list"></div>
         <div class="hero-actions">
           <button id="load-tone-profile" class="btn btn-secondary" type="button">Load my tone profile</button>

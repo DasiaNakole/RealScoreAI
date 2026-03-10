@@ -91,7 +91,7 @@ const seedLeads = [
 ];
 
 const leads = seedLeads.map((lead) => {
-  const scored = calculateLeadScore(lead.signals);
+  const scored = calculateLeadScore(lead.signals, { pipelineProgress: lead.pipelineProgress || {} });
   const base = {
     ...lead,
     score: scored.score,

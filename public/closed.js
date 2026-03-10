@@ -3,6 +3,11 @@ const token = localStorage.getItem(TOKEN_KEY);
 if (!token) window.location.href = '/login.html';
 let account = null;
 
+function hasAutomationAccess(planId) {
+  const normalized = String(planId || '').trim().toLowerCase();
+  return normalized === 'silver' || normalized === 'gold' || normalized === 'pro' || normalized === 'platinum';
+}
+
 function setMessage(message, isError = false) {
   const node = document.getElementById('closed-message');
   node.textContent = message;
@@ -33,9 +38,9 @@ async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
   const runButton = document.getElementById('run-closed-followup');
-  if (runButton && account.subscription?.planId !== 'pro') {
+  if (runButton && !hasAutomationAccess(account.subscription?.planId)) {
     runButton.style.display = 'none';
-    setMessage('Core plan does not run automatic closed-client follow-ups. Pro only.');
+    setMessage('Bronze plan does not run automatic closed-client follow-ups. Silver/Gold only.');
   }
 }
 
@@ -72,8 +77,8 @@ async function loadClosed() {
 }
 
 document.getElementById('run-closed-followup').addEventListener('click', async () => {
-  if (account?.subscription?.planId !== 'pro') {
-    setMessage('Closed-client automation is available on the Pro plan only.', true);
+  if (!hasAutomationAccess(account?.subscription?.planId)) {
+    setMessage('Closed-client automation is available on Silver and Gold plans.', true);
     return;
   }
   try {

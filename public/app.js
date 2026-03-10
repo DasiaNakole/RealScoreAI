@@ -234,6 +234,40 @@ function renderCadenceQueue() {
   });
 }
 
+function renderPickupSummary(summary) {
+  const messageNode = document.getElementById('pickup-summary-message');
+  const listNode = document.getElementById('pickup-summary-list');
+  if (!messageNode || !listNode) return;
+
+  const detail = summary?.message || 'No urgent follow-ups right now.';
+  messageNode.textContent = `Welcome back - here's what happened while you were away. ${detail}`;
+  listNode.innerHTML = '';
+
+  const leads = summary?.leads || [];
+  if (!leads.length) {
+    listNode.innerHTML = '<p class="meta">No leads need immediate attention.</p>';
+    return;
+  }
+
+  leads.forEach((lead) => {
+    const card = document.createElement('article');
+    card.className = 'invite-item';
+    card.innerHTML = `
+      <strong>${lead.name}</strong>
+      <span class="meta">Last contact: ${lead.lastActivityLabel || 'No activity recorded'}</span>
+      <span class="meta">Suggested action: ${lead.suggestedAction || 'Follow up'}</span>
+      <span class="meta">Score ${lead.score}</span>
+    `;
+    card.addEventListener('click', async () => {
+      selectedLeadId = lead.id;
+      const explanation = await authedFetch(`/api/leads/${lead.id}/explanation`);
+      if (!explanation) return;
+      renderScoreDetails(explanation);
+    });
+    listNode.appendChild(card);
+  });
+}
+
 function leadItem(lead) {
   const li = document.createElement('li');
   li.className = `lead-item ${lead.score < 50 ? 'low' : ''}`;
@@ -260,6 +294,9 @@ function clearLeadForm() {
   document.getElementById('lead-name').value = '';
   document.getElementById('lead-email').value = '';
   document.getElementById('lead-phone').value = '';
+  document.getElementById('lead-source').value = '';
+  document.getElementById('lead-notes').value = '';
+  document.getElementById('lead-last-contacted').value = '';
   document.getElementById('lead-stage').value = 'consultation';
   applyPipelineProgressToForm({});
   document.getElementById('lead-response-time').value = '60';
@@ -273,6 +310,11 @@ function fillLeadForm(lead) {
   document.getElementById('lead-name').value = lead.name || '';
   document.getElementById('lead-email').value = lead.email || '';
   document.getElementById('lead-phone').value = lead.phone || '';
+  document.getElementById('lead-source').value = lead.source || '';
+  document.getElementById('lead-notes').value = lead.notes || '';
+  document.getElementById('lead-last-contacted').value = lead.lastContactedAt
+    ? new Date(lead.lastContactedAt).toISOString().slice(0, 10)
+    : '';
   document.getElementById('lead-stage').value = normalizeLeadStage(lead.stage);
   applyPipelineProgressToForm(lead.pipelineProgress || {});
   document.getElementById('lead-response-time').value = String(lead.signals?.responseTimeMinutes ?? 60);
@@ -299,6 +341,7 @@ function renderLeadManagerList(leads) {
     card.innerHTML = `
       <strong>${lead.name}</strong>
       <span class="meta">${lead.email} | ${lead.stage}</span>
+      <span class="meta">Source: ${lead.source || 'n/a'}</span>
       <span class="meta">Score: ${lead.score} | Bucket: ${lead.bucket}</span>
       <span class="meta">Preapproval: ${preapproved ? 'Complete' : 'Pending'}</span>
       <div class="hero-actions">
@@ -367,6 +410,7 @@ async function loadDashboard() {
 
   const data = await authedFetch('/api/dashboard');
   if (!data) return;
+  renderPickupSummary(data.pickupSummary);
 
   const mappings = [
     ['top5-clients', data.top5 || []],
@@ -448,6 +492,11 @@ document.getElementById('lead-form').addEventListener('submit', async (event) =>
     name: document.getElementById('lead-name').value.trim(),
     email: document.getElementById('lead-email').value.trim(),
     phone: document.getElementById('lead-phone').value.trim(),
+    source: document.getElementById('lead-source').value.trim(),
+    notes: document.getElementById('lead-notes').value.trim(),
+    lastContactedAt: document.getElementById('lead-last-contacted').value
+      ? new Date(`${document.getElementById('lead-last-contacted').value}T00:00:00Z`).toISOString()
+      : null,
     stage: stageValue,
     pipelineProgress,
     responseTimeMinutes: Number(document.getElementById('lead-response-time').value || 0),

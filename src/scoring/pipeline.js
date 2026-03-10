@@ -46,7 +46,7 @@ export function applyLeadEvent(lead, event) {
       break;
   }
 
-  const scored = calculateLeadScore(updated.signals);
+  const scored = calculateLeadScore(updated.signals, { pipelineProgress: updated.pipelineProgress });
   updated.score = scored.score;
   updated.bucket = scored.bucket;
   updated.whyScore = scored.whyScore;

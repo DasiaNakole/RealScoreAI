@@ -1,12 +1,15 @@
 const TOKEN_KEY = 'authToken';
 const PLAN_KEY = 'selectedPlan';
+const PLAN_ALIASES = { core: 'bronze', pro: 'silver', team: 'gold', platinum: 'gold' };
 const query = new URLSearchParams(window.location.search);
 const prefillEmail = query.get('email') || '';
 
 const messageNode = document.getElementById('auth-message');
 const selectedPlanNode = document.getElementById('selected-plan');
-const selectedPlan = localStorage.getItem(PLAN_KEY) || 'pro';
-selectedPlanNode.textContent = selectedPlan.toUpperCase();
+const selectedPlanRaw = localStorage.getItem(PLAN_KEY) || 'silver';
+const selectedPlan = PLAN_ALIASES[selectedPlanRaw] || selectedPlanRaw;
+localStorage.setItem(PLAN_KEY, selectedPlan);
+selectedPlanNode.textContent = selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1);
 
 if (prefillEmail) {
   const registerEmail = document.querySelector('#register-form input[name="email"]');

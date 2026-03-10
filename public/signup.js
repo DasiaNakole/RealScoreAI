@@ -8,8 +8,11 @@ const passwordInput = document.querySelector('#register-form input[name="passwor
 const confirmInput = document.querySelector('#register-form input[name="confirmPassword"]');
 const strengthNode = document.getElementById('password-strength-signup');
 const matchNode = document.getElementById('password-match-signup');
-const selectedPlan = localStorage.getItem(PLAN_KEY) || 'pro';
-selectedPlanNode.textContent = selectedPlan.toUpperCase();
+const PLAN_ALIASES = { core: 'bronze', pro: 'silver', team: 'gold', platinum: 'gold' };
+const selectedPlanRaw = localStorage.getItem(PLAN_KEY) || 'silver';
+const selectedPlan = PLAN_ALIASES[selectedPlanRaw] || selectedPlanRaw;
+localStorage.setItem(PLAN_KEY, selectedPlan);
+selectedPlanNode.textContent = selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1);
 
 function setMessage(msg, isError = false) {
   messageNode.textContent = msg;

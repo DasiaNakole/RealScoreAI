@@ -1,13 +1,16 @@
 const TOKEN_KEY = 'authToken';
 const PLAN_KEY = 'selectedPlan';
+const PLAN_ALIASES = { core: 'bronze', pro: 'silver', team: 'gold', platinum: 'gold' };
 
 const token = localStorage.getItem(TOKEN_KEY);
 if (!token) {
   window.location.href = '/login.html';
 }
 
-const selectedPlan = localStorage.getItem(PLAN_KEY) || 'pro';
-document.getElementById('payment-plan').textContent = selectedPlan.toUpperCase();
+const selectedPlanRaw = localStorage.getItem(PLAN_KEY) || 'silver';
+const selectedPlan = PLAN_ALIASES[selectedPlanRaw] || selectedPlanRaw;
+localStorage.setItem(PLAN_KEY, selectedPlan);
+document.getElementById('payment-plan').textContent = selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1);
 
 function setMessage(msg, isError = false) {
   const node = document.getElementById('payment-message');

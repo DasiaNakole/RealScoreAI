@@ -5,6 +5,11 @@ if (!token) window.location.href = '/login.html';
 let leadsCache = [];
 let account = null;
 
+function hasAutomationAccess(planId) {
+  const normalized = String(planId || '').trim().toLowerCase();
+  return normalized === 'silver' || normalized === 'gold' || normalized === 'pro' || normalized === 'platinum';
+}
+
 function setMessage(message, isError = false) {
   const node = document.getElementById('followups-message');
   node.textContent = message;
@@ -66,11 +71,11 @@ async function authedFetch(path, options = {}) {
 async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
-  const isPro = String(account.subscription?.planId || '').trim().toLowerCase() === 'pro';
+  const isPro = hasAutomationAccess(account.subscription?.planId);
   const runButton = document.getElementById('run-cadence');
   if (runButton) runButton.style.display = isPro ? '' : 'none';
   if (!isPro) {
-    setMessage('Core plan uses manual follow-ups only. Review suggestions and send manually.');
+    setMessage('Bronze plan uses manual follow-ups only. Review suggestions and send manually.');
   }
 }
 
@@ -106,8 +111,8 @@ document.getElementById('lead-select').addEventListener('change', () => {
 });
 
 document.getElementById('run-cadence').addEventListener('click', async () => {
-  if (String(account?.subscription?.planId || '').trim().toLowerCase() !== 'pro') {
-    setMessage('Run follow ups is available on the Pro plan only.', true);
+  if (!hasAutomationAccess(account?.subscription?.planId)) {
+    setMessage('Run follow ups is available on Silver and Gold plans.', true);
     return;
   }
   try {

@@ -20,6 +20,9 @@ create table if not exists leads (
   name text not null,
   email text not null,
   phone text,
+  source text,
+  notes text,
+  last_contacted_at timestamptz,
   score integer not null default 0,
   bucket text not null default 'at_risk',
   status text not null default 'new',
@@ -40,6 +43,9 @@ create table if not exists leads (
 
 alter table leads add column if not exists pipeline_progress jsonb not null default '{}'::jsonb;
 alter table leads add column if not exists closed_at timestamptz;
+alter table leads add column if not exists source text;
+alter table leads add column if not exists notes text;
+alter table leads add column if not exists last_contacted_at timestamptz;
 
 create index if not exists idx_leads_user_id on leads(user_id);
 create index if not exists idx_leads_score on leads(score desc);
