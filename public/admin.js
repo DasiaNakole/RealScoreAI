@@ -279,7 +279,7 @@ document.getElementById('demo-account-form').addEventListener('submit', async (e
     if (!result) return;
 
     formEl.reset();
-    setMessage(`Demo account created for ${result.demoAccount.email} (${result.demoAccount.plan}). Setup email sent.`);
+    setMessage(`Demo account created for ${result.demoAccount.email}. Assigned plan: ${result.demoAccount.plan}. Setup email sent.`);
   } catch (error) {
     setMessage(error.message, true);
   }
