@@ -195,7 +195,11 @@ document.getElementById('invite-form').addEventListener('submit', async (event) 
 
     formEl.reset();
     await loadInvites();
-    setMessage('Invite created.');
+    if (result.emailSent) {
+      setMessage('Invite created and email sent.');
+    } else {
+      setMessage(`Invite created, but email did not send: ${result.warning || 'unknown error'}`, true);
+    }
   } catch (error) {
     setMessage(error.message, true);
   }

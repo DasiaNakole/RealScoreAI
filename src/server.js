@@ -1699,7 +1699,7 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
   });
 });
 
-app.post("/api/admin/invites", requireAdminAccess, (req, res) => {
+app.post("/api/admin/invites", requireAdminAccess, async (req, res) => {
   const { email, name = "" } = req.body || {};
   if (!email) return res.status(400).json({ error: "email is required." });
 
@@ -1715,7 +1715,34 @@ app.post("/api/admin/invites", requireAdminAccess, (req, res) => {
   };
 
   invites.set(invite.id, invite);
-  return res.status(201).json({ ok: true, invite });
+  try {
+    await sendEmail({
+      to: invite.email,
+      subject: "Your RealScoreAI invite",
+      text: [
+        `Hi ${invite.name || "there"},`,
+        "",
+        "You have been invited to try RealScoreAI.",
+        "",
+        `Create your account here: ${invite.inviteUrl}`,
+        "",
+        "Your lead scoring, dashboard, and follow-up workflow will be available after signup.",
+        "",
+        "- RealScoreAI"
+      ].join("\n"),
+      fromName: "RealScoreAI"
+    });
+
+    invite.status = "sent";
+    invite.sentAt = new Date().toISOString();
+    invites.set(invite.id, invite);
+    return res.status(201).json({ ok: true, invite, emailSent: true });
+  } catch (error) {
+    invite.status = "pending";
+    invite.sendError = error.message || "Failed to send invite email.";
+    invites.set(invite.id, invite);
+    return res.status(201).json({ ok: true, invite, emailSent: false, warning: invite.sendError });
+  }
 });
 
 app.get("/api/admin/invites", requireAdminAccess, (_req, res) => {
