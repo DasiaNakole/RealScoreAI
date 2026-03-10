@@ -1826,7 +1826,7 @@ app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
     const name = String(req.body?.name || "").trim();
-    const requestedPlan = String(req.body?.plan || "bronze").trim().toLowerCase();
+    const requestedPlan = String(req.body?.plan || "silver").trim().toLowerCase();
     const planId = resolvePlanId(requestedPlan);
     if (!plans[planId]) {
       return res.status(400).json({ error: "Valid plan is required." });
