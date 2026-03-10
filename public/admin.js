@@ -111,12 +111,26 @@ function renderUsers(users) {
     const lastActive = user.last_active_at ? new Date(user.last_active_at).toLocaleString() : 'n/a';
     const role = String(user.role || '').toLowerCase();
     const canDelete = role !== 'admin';
+    const currentPlan = String(user.plan || 'none').toLowerCase();
+    const subscriptionStatus = user.subscription_status || 'none';
+    const trialEndsLabel = user.trial_ends_at ? new Date(user.trial_ends_at).toLocaleDateString() : 'n/a';
 
     card.innerHTML = `
       <strong>${user.name || 'Unnamed user'}</strong>
       <span class="meta">${user.email}</span>
       <span class="meta">Role: ${user.role} | Beta: ${user.beta_flag ? 'yes' : 'no'}</span>
+      <span class="meta">Plan: ${currentPlan} | Subscription: ${subscriptionStatus} | Trial ends: ${trialEndsLabel}</span>
       <span class="meta">Created: ${createdAt} | Last active: ${lastActive}</span>
+      ${role !== 'admin' ? `
+        <div class="hero-actions">
+          <select data-plan-user-id="${user.id}">
+            <option value="bronze" ${currentPlan === 'bronze' ? 'selected' : ''}>bronze</option>
+            <option value="silver" ${currentPlan === 'silver' ? 'selected' : ''}>silver</option>
+            <option value="gold" ${currentPlan === 'gold' ? 'selected' : ''}>gold</option>
+          </select>
+          <button class="btn btn-secondary" data-update-user-plan-id="${user.id}">Update plan</button>
+        </div>
+      ` : ''}
       ${canDelete
         ? `<button class="btn btn-secondary" data-delete-user-id="${user.id}" data-delete-user-email="${user.email}">Delete profile</button>`
         : '<span class="meta">Admin profile protected</span>'}
@@ -137,6 +151,32 @@ function renderUsers(users) {
         if (!result) return;
         await loadUsers();
         setMessage(`Deleted profile: ${result.user?.email || email}`);
+      } catch (error) {
+        setMessage(error.message, true);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-update-user-plan-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const userId = button.dataset.updateUserPlanId;
+      const select = document.querySelector(`[data-plan-user-id="${userId}"]`);
+      const plan = select?.value;
+      if (!plan) {
+        setMessage('Select a valid plan first.', true);
+        return;
+      }
+
+      try {
+        const result = await adminFetch(`/api/admin/users/${encodeURIComponent(userId)}/plan`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan })
+        });
+        if (!result) return;
+
+        await loadUsers();
+        setMessage(`Updated ${result.user?.email || userId} to ${result.subscription?.planId || plan}.`);
       } catch (error) {
         setMessage(error.message, true);
       }

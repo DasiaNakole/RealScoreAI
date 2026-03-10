@@ -1940,6 +1940,56 @@ app.delete("/api/admin/users/:userId", requireAdminAccess, async (req, res) => {
   res.json({ ok: true, user: deleted });
 });
 
+app.patch("/api/admin/users/:userId/plan", requireAdminAccess, async (req, res) => {
+  const userId = String(req.params.userId || "").trim();
+  const requestedPlan = String(req.body?.plan || "").trim().toLowerCase();
+  const planId = resolvePlanId(requestedPlan);
+
+  if (!userId) return res.status(400).json({ error: "userId is required." });
+  if (!plans[planId]) return res.status(400).json({ error: "Valid plan is required." });
+
+  const target = await getUserById(userId);
+  if (!target) return res.status(404).json({ error: "User not found." });
+
+  const existing = await getSubscriptionByUserId(userId);
+  const fallbackTrialEnds = new Date(Date.now() + (getPlan(planId)?.trialDays || 30) * 24 * 60 * 60 * 1000).toISOString();
+
+  const updated = await upsertSubscription({
+    userId,
+    plan: planId,
+    status: existing?.status || "trialing",
+    paymentMethodLast4: existing?.payment_method_last4 || null,
+    cardholderName: existing?.cardholder_name || null,
+    trialEndsAt: existing?.trial_ends_at || fallbackTrialEnds,
+    stripeCustomerId: existing?.stripe_customer_id || null
+  });
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "admin_user_plan_updated",
+    metadata: {
+      targetUserId: userId,
+      targetEmail: target.email,
+      previousPlan: existing?.plan || null,
+      plan: planId
+    }
+  });
+
+  res.json({
+    ok: true,
+    user: {
+      id: target.id,
+      email: target.email,
+      name: target.name
+    },
+    subscription: {
+      planId: updated.plan,
+      status: updated.status,
+      trialEndsAt: updated.trial_ends_at
+    }
+  });
+});
+
 app.get("/api/admin/email/status", requireAdminAccess, async (_req, res) => {
   res.json({ smtp: getSmtpStatus() });
 });

@@ -67,8 +67,10 @@ export async function getUserById(userId) {
 
 export async function listUsers() {
   const result = await pool.query(
-    `select id, email, name, role, beta_flag, created_at, last_active_at
-     from users
+    `select u.id, u.email, u.name, u.role, u.beta_flag, u.created_at, u.last_active_at,
+            s.plan, s.status as subscription_status, s.trial_ends_at
+     from users u
+     left join subscriptions s on s.user_id = u.id
      order by created_at desc`
   );
   return result.rows;

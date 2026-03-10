@@ -406,7 +406,7 @@ async function loadDashboard() {
   document.getElementById('welcome-name').textContent = `Welcome, ${firstName}.`;
   cadenceDueCache = [];
   renderCadenceQueue();
-  setCadenceStatus('Use the Follow-Ups page for manual sends. Silver and Gold users can run follow ups there.');
+  setCadenceStatus('Use the Follow-Ups page for manual sends. Silver and Gold users can run auto follow ups there.');
 
   const data = await authedFetch('/api/dashboard');
   if (!data) return;
