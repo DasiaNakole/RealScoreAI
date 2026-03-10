@@ -551,13 +551,14 @@ async function hydrateLead(lead) {
 async function applyAndPersistLeadEvent(lead, event, userId) {
   const hydrated = await hydrateLead(lead);
   const updated = applyLeadEvent(hydrated, event);
+  const isInboundReply = String(event.type || "").trim().toUpperCase() === "MESSAGE_RECEIVED";
 
   const persisted = await updateLeadSnapshot({
     id: updated.id,
     stage: updated.stage,
     source: lead.source,
     notes: lead.notes,
-    lastContactedAt: lead.lastContactedAt,
+    lastContactedAt: isInboundReply ? new Date().toISOString() : lead.lastContactedAt,
     score: updated.score,
     bucket: updated.bucket,
     signals: updated.signals,
