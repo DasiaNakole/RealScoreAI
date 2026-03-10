@@ -52,6 +52,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const ADMIN_KEY = process.env.ADMIN_KEY || (!isProduction ? "beta-admin-2026" : "");
 const WEBHOOK_KEY = process.env.WEBHOOK_KEY || (!isProduction ? "lead-webhook-2026" : "");
+const PASSWORD_RESET_SECRET = process.env.PASSWORD_RESET_SECRET || ADMIN_KEY || WEBHOOK_KEY || "dev-password-reset-secret";
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
 const ADMIN_NAME = String(process.env.ADMIN_NAME || "RealScoreAI Admin").trim();
@@ -59,7 +60,6 @@ const ADMIN_NAME = String(process.env.ADMIN_NAME || "RealScoreAI Admin").trim();
 const sessions = new Map();
 const invites = new Map();
 const streamClients = new Map();
-const passwordResetTokens = new Map();
 
 const SEED_LEADS = [
   {
@@ -117,10 +117,51 @@ function hashPassword(password) {
 }
 
 function createPasswordResetToken(userId, ttlMs = 60 * 60 * 1000) {
-  const token = crypto.randomBytes(24).toString("hex");
-  const expiresAt = Date.now() + ttlMs;
-  passwordResetTokens.set(token, { userId, expiresAt });
-  return token;
+  const payload = {
+    userId,
+    exp: Date.now() + ttlMs
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", PASSWORD_RESET_SECRET)
+    .update(encoded)
+    .digest("hex");
+  return `${encoded}.${signature}`;
+}
+
+function verifyPasswordResetToken(token) {
+  const value = String(token || "").trim();
+  if (!value || !value.includes(".")) {
+    return { valid: false, error: "Reset token is invalid or expired." };
+  }
+
+  const [encoded, signature] = value.split(".");
+  if (!encoded || !signature) {
+    return { valid: false, error: "Reset token is invalid or expired." };
+  }
+
+  const expected = crypto
+    .createHmac("sha256", PASSWORD_RESET_SECRET)
+    .update(encoded)
+    .digest("hex");
+
+  const givenBuf = Buffer.from(signature, "utf8");
+  const expectedBuf = Buffer.from(expected, "utf8");
+  if (givenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(givenBuf, expectedBuf)) {
+    return { valid: false, error: "Reset token is invalid or expired." };
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    const exp = Number(decoded?.exp || 0);
+    const userId = String(decoded?.userId || "").trim();
+    if (!userId || !exp || Date.now() > exp) {
+      return { valid: false, error: "Reset token is invalid or expired." };
+    }
+    return { valid: true, userId };
+  } catch {
+    return { valid: false, error: "Reset token is invalid or expired." };
+  }
 }
 
 function validateStrongPassword(password) {
@@ -745,10 +786,9 @@ app.post("/api/auth/reset-password", async (req, res) => {
     return res.status(400).json({ error: "token and password are required." });
   }
 
-  const record = passwordResetTokens.get(token);
-  if (!record || Date.now() > record.expiresAt) {
-    passwordResetTokens.delete(token);
-    return res.status(400).json({ error: "Reset token is invalid or expired." });
+  const verification = verifyPasswordResetToken(token);
+  if (!verification.valid) {
+    return res.status(400).json({ error: verification.error });
   }
 
   const passwordCheck = validateStrongPassword(newPassword);
@@ -756,15 +796,14 @@ app.post("/api/auth/reset-password", async (req, res) => {
     return res.status(400).json({ error: passwordCheck.message });
   }
 
-  await updateUserPasswordHash(record.userId, hashPassword(newPassword));
-  const updatedUser = await getUserById(record.userId);
+  await updateUserPasswordHash(verification.userId, hashPassword(newPassword));
+  const updatedUser = await getUserById(verification.userId);
   if (updatedUser && String(updatedUser.role || "").toLowerCase() === "demo_pending_reset") {
-    await updateUserRole(record.userId, "beta", true);
+    await updateUserRole(verification.userId, "beta", true);
   }
-  passwordResetTokens.delete(token);
 
   await insertEvent({
-    userId: record.userId,
+    userId: verification.userId,
     eventType: "password_reset_completed",
     metadata: {}
   });
