@@ -65,6 +65,25 @@ export async function getUserById(userId) {
   return result.rows[0] || null;
 }
 
+export async function listUsers() {
+  const result = await pool.query(
+    `select id, email, name, role, beta_flag, created_at, last_active_at
+     from users
+     order by created_at desc`
+  );
+  return result.rows;
+}
+
+export async function deleteUserById(userId) {
+  const result = await pool.query(
+    `delete from users
+     where id = $1
+     returning id, email, name, role`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function touchUser(userId) {
   await pool.query(`update users set last_active_at = now() where id = $1`, [userId]);
 }

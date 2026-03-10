@@ -16,6 +16,7 @@ import {
   createUser,
   createLead,
   deleteLeadForUser,
+  deleteUserById,
   getAdminMetrics,
   getLeadByEmailForUser,
   getLeadById,
@@ -34,6 +35,7 @@ import {
   listTrialingUsers,
   listEventsForLead,
   listLeadsByUser,
+  listUsers,
   listTrackingLinksByLeadForUser,
   listUserEventsByType,
   touchUser,
@@ -1898,6 +1900,44 @@ app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
 
 app.get("/api/admin/metrics", requireAdminAccess, async (_req, res) => {
   res.json(await getAdminMetrics());
+});
+
+app.get("/api/admin/users", requireAdminAccess, async (_req, res) => {
+  const users = await listUsers();
+  res.json({ users });
+});
+
+app.delete("/api/admin/users/:userId", requireAdminAccess, async (req, res) => {
+  const userId = String(req.params.userId || "").trim();
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required." });
+  }
+
+  if (userId === req.user.id) {
+    return res.status(400).json({ error: "You cannot delete your own admin account." });
+  }
+
+  const target = await getUserById(userId);
+  if (!target) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  if (String(target.role || "").toLowerCase() === "admin") {
+    return res.status(403).json({ error: "Deleting admin accounts is blocked for safety." });
+  }
+
+  const deleted = await deleteUserById(userId);
+  if (!deleted) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "admin_user_deleted",
+    metadata: { deletedUserId: deleted.id, deletedEmail: deleted.email }
+  });
+
+  res.json({ ok: true, user: deleted });
 });
 
 app.get("/api/admin/email/status", requireAdminAccess, async (_req, res) => {

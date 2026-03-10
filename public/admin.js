@@ -2,6 +2,7 @@ const TOKEN_KEY = 'authToken';
 const token = localStorage.getItem(TOKEN_KEY);
 const messageNode = document.getElementById('admin-message');
 const inviteListNode = document.getElementById('invite-list');
+const userListNode = document.getElementById('user-list');
 const templateKeyNode = document.getElementById('template-key');
 const templatePlanScopeNode = document.getElementById('template-plan-scope');
 const templateSubjectNode = document.getElementById('template-subject');
@@ -95,6 +96,59 @@ function renderInvites(invites) {
   });
 }
 
+function renderUsers(users) {
+  userListNode.innerHTML = '';
+
+  if (!users.length) {
+    userListNode.innerHTML = '<p class="meta">No profiles found.</p>';
+    return;
+  }
+
+  users.forEach((user) => {
+    const card = document.createElement('article');
+    card.className = 'invite-item';
+    const createdAt = user.created_at ? new Date(user.created_at).toLocaleString() : 'n/a';
+    const lastActive = user.last_active_at ? new Date(user.last_active_at).toLocaleString() : 'n/a';
+    const role = String(user.role || '').toLowerCase();
+    const canDelete = role !== 'admin';
+
+    card.innerHTML = `
+      <strong>${user.name || 'Unnamed user'}</strong>
+      <span class="meta">${user.email}</span>
+      <span class="meta">Role: ${user.role} | Beta: ${user.beta_flag ? 'yes' : 'no'}</span>
+      <span class="meta">Created: ${createdAt} | Last active: ${lastActive}</span>
+      ${canDelete
+        ? `<button class="btn btn-secondary" data-delete-user-id="${user.id}" data-delete-user-email="${user.email}">Delete profile</button>`
+        : '<span class="meta">Admin profile protected</span>'}
+    `;
+
+    userListNode.appendChild(card);
+  });
+
+  document.querySelectorAll('[data-delete-user-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const userId = button.dataset.deleteUserId;
+      const email = button.dataset.deleteUserEmail;
+      const confirmed = confirm(`Delete profile for ${email}? This also deletes their leads/events/subscription.`);
+      if (!confirmed) return;
+
+      try {
+        const result = await adminFetch(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+        if (!result) return;
+        await loadUsers();
+        setMessage(`Deleted profile: ${result.user?.email || email}`);
+      } catch (error) {
+        setMessage(error.message, true);
+      }
+    });
+  });
+}
+
+async function loadUsers() {
+  const data = await adminFetch('/api/admin/users');
+  renderUsers(data.users || []);
+}
+
 async function loadInvites() {
   const data = await adminFetch('/api/admin/invites');
   renderInvites(data.invites || []);
@@ -160,6 +214,7 @@ function downloadCsv(filename, content) {
 document.getElementById('refresh-invites').addEventListener('click', async () => {
   try {
     await loadInvites();
+    await loadUsers();
     await loadTemplates();
     setMessage('Admin data refreshed.');
   } catch (error) {
@@ -327,6 +382,7 @@ async function init() {
       return;
     }
     await loadInvites();
+    await loadUsers();
     await loadTemplates();
     setMessage('Admin ready.');
   } catch (error) {
