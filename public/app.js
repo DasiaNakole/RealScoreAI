@@ -433,6 +433,9 @@ async function loadDashboard() {
   }
 
   await loadLeadManager();
+  if (!allLeadsCache.length) {
+    setLeadManagerStatus('Welcome to RealScoreAI beta -- add your first lead to start tracking follow-ups.');
+  }
 }
 
 function scheduleDashboardRefresh() {
