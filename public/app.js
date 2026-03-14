@@ -358,6 +358,12 @@ function renderLeadManagerList(leads) {
       if (!lead) return;
       fillLeadForm(lead);
       setLeadManagerStatus(`Editing ${lead.name}.`);
+      const formNode = document.getElementById('lead-form');
+      if (formNode) {
+        formNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      const nameField = document.getElementById('lead-name');
+      nameField?.focus();
     });
   });
 
