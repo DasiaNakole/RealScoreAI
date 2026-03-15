@@ -160,6 +160,7 @@ function setCadenceStatus(message, isError = false) {
 
 function setLeadManagerStatus(message, isError = false) {
   const node = document.getElementById('lead-manager-status');
+  if (!node) return;
   node.textContent = message;
   node.style.color = isError ? '#ff5f7a' : '';
 }
@@ -522,6 +523,7 @@ function leadItem(lead) {
 }
 
 function clearLeadForm() {
+  if (!document.getElementById('lead-form')) return;
   document.getElementById('lead-id').value = '';
   document.getElementById('lead-name').value = '';
   document.getElementById('lead-email').value = '';
@@ -541,6 +543,7 @@ function clearLeadForm() {
 }
 
 function fillLeadForm(lead) {
+  if (!document.getElementById('lead-form')) return;
   setLeadManagerTab('form');
   advancedFieldsVisible = true;
   updateAdvancedFieldsVisibility();
@@ -566,6 +569,7 @@ function fillLeadForm(lead) {
 
 function renderLeadManagerList(leads) {
   const container = document.getElementById('lead-manager-list');
+  if (!container) return;
   container.innerHTML = '';
 
   if (!leads.length) {
@@ -633,6 +637,12 @@ async function loadLeadManager() {
   renderLeadSearchResults();
 }
 
+async function loadAllLeadsCache() {
+  const data = await authedFetch('/api/leads');
+  if (!data) return;
+  allLeadsCache = data.leads || [];
+}
+
 async function loadDashboard() {
   const me = await authedFetch('/api/auth/me');
   if (!me) return;
@@ -672,7 +682,7 @@ async function loadDashboard() {
     }
   }
 
-  await loadLeadManager();
+  await loadAllLeadsCache();
   renderDashboardStats(data);
   const isEmpty = !allLeadsCache.length;
   setWorkspaceMode(isEmpty);
@@ -740,30 +750,15 @@ document.getElementById('load-demo-leads')?.addEventListener('click', async () =
 });
 
 document.getElementById('first-run-add-lead')?.addEventListener('click', () => {
-  setWorkspaceMode(false);
-  setLeadManagerTab('form');
-  clearLeadForm();
-  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  document.getElementById('lead-name')?.focus();
+  window.location.href = '/lead-manager.html';
 });
 
 document.getElementById('first-run-import')?.addEventListener('click', () => {
-  setWorkspaceMode(false);
-  setLeadManagerTab('import');
-  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  document.getElementById('lead-csv-file')?.focus();
+  window.location.href = '/lead-manager.html?tab=import';
 });
 
 document.getElementById('first-run-demo')?.addEventListener('click', () => {
-  document.getElementById('load-demo-leads')?.click();
-});
-
-document.getElementById('workspace-new-lead')?.addEventListener('click', () => {
-  setLeadManagerTab('form');
-  clearLeadForm();
-  setLeadManagerStatus('Ready for a new lead.');
-  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  document.getElementById('lead-name')?.focus();
+  window.location.href = '/lead-manager.html?demo=1';
 });
 
 document.getElementById('lead-search')?.addEventListener('input', (event) => {
@@ -824,7 +819,7 @@ document.getElementById('lead-csv-import')?.addEventListener('click', async () =
   }
 });
 
-document.getElementById('lead-form').addEventListener('submit', async (event) => {
+document.getElementById('lead-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const id = document.getElementById('lead-id').value.trim();
@@ -912,7 +907,7 @@ document.getElementById('send-followup')?.addEventListener('click', async () => 
   }
 });
 
-document.getElementById('load-tone-profile').addEventListener('click', async () => {
+document.getElementById('load-tone-profile')?.addEventListener('click', async () => {
   try {
     const data = await authedFetch('/api/ai/tone-profile');
     if (!data) return;
@@ -1011,13 +1006,18 @@ for (const step of PIPELINE_STEPS) {
   const node = document.getElementById(`pipeline-${step}`);
   node?.addEventListener('change', () => {
     const progress = collectPipelineProgressFromForm();
-    document.getElementById('lead-stage').value = inferStageFromPipeline(progress);
+    const stageNode = document.getElementById('lead-stage');
+    if (stageNode) {
+      stageNode.value = inferStageFromPipeline(progress);
+    }
   });
 }
 
-clearLeadForm();
-setLeadManagerTab('form');
-updateAdvancedFieldsVisibility();
+if (document.getElementById('lead-form')) {
+  clearLeadForm();
+  setLeadManagerTab('form');
+  updateAdvancedFieldsVisibility();
+}
 renderCadenceQueue();
 setTrackingUrl('');
 document.getElementById('logout-button')?.addEventListener('click', async () => {

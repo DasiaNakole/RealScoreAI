@@ -128,6 +128,10 @@ h3 {
   gap: 18px;
 }
 
+.utility-page {
+  width: min(1320px, 94vw);
+}
+
 .first-run-panel {
   padding-top: 24px;
 }
@@ -159,6 +163,10 @@ h3 {
   padding-top: 26px;
 }
 
+.compact-panel {
+  align-self: start;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
@@ -185,6 +193,21 @@ h3 {
 
 .content-grid-single-rail {
   grid-template-columns: 1fr;
+}
+
+.workspace-actions-panel {
+  padding-top: 20px;
+}
+
+.utility-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.nested-panel {
+  padding: 20px;
 }
 
 
@@ -888,5 +911,9 @@ body[data-theme="light"] .lead-item {
   .workspace-search-panel {
     max-height: none;
     overflow: visible;
+  }
+
+  .utility-grid {
+    grid-template-columns: 1fr;
   }
 }

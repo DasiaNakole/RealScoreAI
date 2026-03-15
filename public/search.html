@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lead Search | RealScoreAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="dashboard utility-page">
+      <section class="panel">
+        <div class="panel-toolbar">
+          <div>
+            <h1>Lead Search</h1>
+            <p class="meta">Search your leads without crowding the main dashboard.</p>
+          </div>
+          <div class="hero-actions">
+            <a class="btn btn-secondary" href="app.html">Back to Dashboard</a>
+            <a class="btn btn-primary" href="lead-manager.html">Open Lead Manager</a>
+            <button id="logout-button" class="btn btn-secondary" type="button">Logout</button>
+          </div>
+        </div>
+        <div class="search-toolbar utility-search-toolbar">
+          <label class="search-field">
+            <span class="meta">Search</span>
+            <input id="lead-search" type="search" placeholder="Name, email, source, notes, stage" />
+          </label>
+          <label class="filter-field">
+            <span class="meta">Stage</span>
+            <select id="lead-search-stage">
+              <option value="">All stages</option>
+              <option value="consultation">Consultation</option>
+              <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
+              <option value="preapproval">Preapproval</option>
+              <option value="home_search">Home Search</option>
+              <option value="schedule_visits">Schedule Visits</option>
+              <option value="home_inspection">Home Inspection</option>
+              <option value="appraisal">Appraisal</option>
+              <option value="sign_documents">Sign Documents</option>
+              <option value="closing">Closing</option>
+              <option value="closed">Closed</option>
+              <option value="nurture">Nurture</option>
+            </select>
+          </label>
+        </div>
+        <div class="utility-grid">
+          <section class="panel nested-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Search Results</h2>
+                <p id="search-results-count" class="meta">0 results</p>
+              </div>
+            </div>
+            <div id="lead-search-results" class="invite-list"></div>
+          </section>
+          <section class="panel nested-panel explanation">
+            <h2>Why this score?</h2>
+            <p id="score-summary">Select a lead to view scoring breakdown.</p>
+            <p id="score-ai-meta" class="meta"></p>
+            <div id="score-details"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="theme.js"></script>
+    <script src="search.js"></script>
+  </body>
+</html>
