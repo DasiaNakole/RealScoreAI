@@ -128,6 +128,14 @@ h3 {
   gap: 18px;
 }
 
+.spotlight-panel {
+  padding-top: 26px;
+}
+
+.search-panel {
+  padding-top: 20px;
+}
+
 .hero,
 .panel,
 .plan,
@@ -445,12 +453,17 @@ body[data-theme="light"] .lead-item {
   grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.7fr);
   gap: 12px;
   margin-top: 12px;
+  align-items: end;
 }
 
 .search-field,
 .filter-field {
   display: grid;
   gap: 6px;
+}
+
+.search-panel #lead-search-results {
+  margin-top: 14px;
 }
 
 .main-column,
