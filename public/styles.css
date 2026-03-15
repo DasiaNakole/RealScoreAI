@@ -362,6 +362,22 @@ body[data-theme="light"] .btn-secondary {
   gap: 16px;
 }
 
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.overview-main {
+  min-height: 100%;
+}
+
+.priority-stack {
+  display: grid;
+  gap: 16px;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -905,6 +921,10 @@ body[data-theme="light"] .lead-item {
 
 @media (max-width: 1180px) {
   .cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-grid {
     grid-template-columns: 1fr;
   }
 
