@@ -720,7 +720,7 @@ function connectRealtimeStream() {
   };
 }
 
-document.getElementById('lead-cancel').addEventListener('click', () => {
+document.getElementById('lead-cancel')?.addEventListener('click', () => {
   clearLeadForm();
   setLeadManagerTab('form');
   setLeadManagerStatus('Lead form cleared.');
@@ -1030,5 +1030,7 @@ document.getElementById('logout-button')?.addEventListener('click', async () => 
   localStorage.removeItem(TOKEN_KEY);
   window.location.href = '/login.html';
 });
-loadDashboard();
+loadDashboard().catch((error) => {
+  setCadenceStatus(error.message || 'Dashboard failed to load.', true);
+});
 connectRealtimeStream();
