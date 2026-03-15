@@ -12,6 +12,8 @@ let allLeadsCache = [];
 let cadenceDueCache = [];
 let lastTrackingUrl = '';
 let currentAccount = null;
+let leadSearchQuery = '';
+let leadSearchStage = '';
 
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
@@ -265,6 +267,81 @@ function renderCadenceQueue() {
   });
 }
 
+function matchesLeadSearch(lead) {
+  const normalizedQuery = leadSearchQuery.trim().toLowerCase();
+  const normalizedStage = normalizeLeadStage(lead.stage);
+  const stageMatches = !leadSearchStage || normalizedStage === leadSearchStage;
+  if (!stageMatches) return false;
+  if (!normalizedQuery) return true;
+
+  const haystack = [
+    lead.name,
+    lead.email,
+    lead.phone,
+    lead.source,
+    lead.notes,
+    lead.stage,
+    STAGE_LABELS[normalizedStage],
+    lead.pipelineProgress?.preapproval ? 'preapproved' : 'preapproval pending'
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
+function renderLeadSearchResults() {
+  const node = document.getElementById('lead-search-results');
+  if (!node) return;
+  node.innerHTML = '';
+
+  const results = allLeadsCache.filter(matchesLeadSearch).slice(0, 12);
+  if (!results.length) {
+    node.innerHTML = '<p class="meta">No leads match the current search.</p>';
+    return;
+  }
+
+  results.forEach((lead) => {
+    const card = document.createElement('article');
+    card.className = 'invite-item';
+    const stageLabel = lead.checklistStageLabel || STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
+    card.innerHTML = `
+      <strong>${lead.name}</strong>
+      <span class="meta">${lead.email || 'No email'}${lead.source ? ` | ${lead.source}` : ''}</span>
+      <span class="meta">Stage: ${stageLabel} | Score ${lead.score}</span>
+      <div class="hero-actions">
+        <button class="btn btn-secondary" type="button" data-search-view="${lead.id}">View Score</button>
+        <button class="btn btn-secondary" type="button" data-search-edit="${lead.id}">Edit Lead</button>
+      </div>
+    `;
+    node.appendChild(card);
+  });
+
+  node.querySelectorAll('[data-search-view]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const leadId = button.dataset.searchView;
+      const explanation = await authedFetch(`/api/leads/${leadId}/explanation`);
+      if (!explanation) return;
+      selectedLeadId = leadId;
+      renderScoreDetails(explanation);
+      document.querySelector('.explanation')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  node.querySelectorAll('[data-search-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const lead = allLeadsCache.find((item) => item.id === button.dataset.searchEdit);
+      if (!lead) return;
+      fillLeadForm(lead);
+      selectedLeadId = lead.id;
+      setLeadManagerStatus(`Editing ${lead.name}.`);
+      document.getElementById('lead-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('lead-name')?.focus();
+    });
+  });
+}
+
 function setText(id, value) {
   const node = document.getElementById(id);
   if (node) node.textContent = String(value);
@@ -455,6 +532,7 @@ async function loadLeadManager() {
   if (!data) return;
   allLeadsCache = data.leads || [];
   renderLeadManagerList(allLeadsCache);
+  renderLeadSearchResults();
 }
 
 async function loadDashboard() {
@@ -553,6 +631,16 @@ document.getElementById('load-demo-leads')?.addEventListener('click', async () =
   } catch (error) {
     setLeadManagerStatus(error.message, true);
   }
+});
+
+document.getElementById('lead-search')?.addEventListener('input', (event) => {
+  leadSearchQuery = String(event.target?.value || '');
+  renderLeadSearchResults();
+});
+
+document.getElementById('lead-search-stage')?.addEventListener('change', (event) => {
+  leadSearchStage = String(event.target?.value || '');
+  renderLeadSearchResults();
 });
 
 document.getElementById('lead-csv-import')?.addEventListener('click', async () => {

@@ -47,6 +47,39 @@
       <section class="content-grid">
         <div class="main-column">
           <section class="panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Search leads</h2>
+                <p class="meta">Find by name, email, source, stage, or checklist progress.</p>
+              </div>
+            </div>
+            <div class="search-toolbar">
+              <label class="search-field">
+                <span class="meta">Search</span>
+                <input id="lead-search" type="search" placeholder="Name, email, source, stage" />
+              </label>
+              <label class="filter-field">
+                <span class="meta">Stage</span>
+                <select id="lead-search-stage">
+                  <option value="">All stages</option>
+                  <option value="consultation">Consultation</option>
+                  <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
+                  <option value="preapproval">Preapproval</option>
+                  <option value="home_search">Home Search</option>
+                  <option value="schedule_visits">Schedule Visits</option>
+                  <option value="home_inspection">Home Inspection</option>
+                  <option value="appraisal">Appraisal</option>
+                  <option value="sign_documents">Sign Documents</option>
+                  <option value="closing">Closing</option>
+                  <option value="closed">Closed</option>
+                  <option value="nurture">Nurture</option>
+                </select>
+              </label>
+            </div>
+            <div id="lead-search-results" class="invite-list"></div>
+          </section>
+
+          <section class="panel">
             <h2>Pick up where you left off</h2>
             <p id="pickup-summary-message" class="meta">Checking your lead activity...</p>
             <div id="pickup-summary-list" class="invite-list"></div>

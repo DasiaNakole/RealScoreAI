@@ -440,6 +440,19 @@ body[data-theme="light"] .lead-item {
   align-items: start;
 }
 
+.search-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.7fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.search-field,
+.filter-field {
+  display: grid;
+  gap: 6px;
+}
+
 .main-column,
 .side-column {
   display: grid;
@@ -656,6 +669,10 @@ body[data-theme="light"] .lead-item {
 
   .lead-manager-panel {
     position: static;
+  }
+
+  .search-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 
