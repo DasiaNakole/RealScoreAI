@@ -164,6 +164,21 @@ function setLeadManagerStatus(message, isError = false) {
   node.style.color = isError ? '#ff5f7a' : '';
 }
 
+function setLeadManagerMode(mode, lead = null) {
+  const heading = document.getElementById('lead-manager-heading');
+  const subheading = document.getElementById('lead-manager-subheading');
+  const saveButton = document.getElementById('lead-save');
+  const isEditing = mode === 'edit' && lead;
+
+  if (heading) heading.textContent = isEditing ? 'Update Lead' : 'New Lead';
+  if (subheading) {
+    subheading.textContent = isEditing
+      ? `Editing ${lead.name}. Update details, checklist progress, or follow-up signals.`
+      : 'Add a new lead, import your pipeline, or open your full lead library.';
+  }
+  if (saveButton) saveButton.textContent = isEditing ? 'Update lead' : 'Save lead';
+}
+
 function setFeedbackStatus(message, isError = false) {
   const node = document.getElementById('feedback-status');
   if (!node) return;
@@ -348,12 +363,20 @@ function renderLeadSearchResults() {
 
   results.forEach((lead) => {
     const card = document.createElement('article');
-    card.className = 'invite-item';
+    card.className = 'invite-item search-result-card';
     const stageLabel = lead.checklistStageLabel || STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
+    const preapprovalLabel = lead.pipelineProgress?.preapproval ? 'Preapproved' : 'Preapproval pending';
     card.innerHTML = `
-      <strong>${lead.name}</strong>
-      <span class="meta">${lead.email || 'No email'}${lead.source ? ` | ${lead.source}` : ''}</span>
-      <span class="meta">Stage: ${stageLabel} | Score ${lead.score}</span>
+      <div class="search-result-topline">
+        <strong>${lead.name}</strong>
+        <span class="search-result-score">Score ${lead.score}</span>
+      </div>
+      <div class="search-result-grid">
+        <span class="meta"><strong>Stage:</strong> ${stageLabel}</span>
+        <span class="meta"><strong>Status:</strong> ${preapprovalLabel}</span>
+        <span class="meta"><strong>Contact:</strong> ${lead.email || 'No email'}</span>
+        <span class="meta"><strong>Source:</strong> ${lead.source || 'Not set'}</span>
+      </div>
       <span class="meta">Next: ${nextBestAction(lead)}</span>
       <div class="hero-actions">
         <button class="btn btn-secondary" type="button" data-search-view="${lead.id}">View Score</button>
@@ -514,12 +537,14 @@ function clearLeadForm() {
   document.getElementById('lead-touches').value = '0';
   advancedFieldsVisible = false;
   updateAdvancedFieldsVisibility();
+  setLeadManagerMode('new');
 }
 
 function fillLeadForm(lead) {
   setLeadManagerTab('form');
   advancedFieldsVisible = true;
   updateAdvancedFieldsVisibility();
+  setLeadManagerMode('edit', lead);
   document.getElementById('lead-id').value = lead.id;
   document.getElementById('lead-name').value = lead.name || '';
   document.getElementById('lead-email').value = lead.email || '';
@@ -717,6 +742,7 @@ document.getElementById('load-demo-leads')?.addEventListener('click', async () =
 document.getElementById('first-run-add-lead')?.addEventListener('click', () => {
   setWorkspaceMode(false);
   setLeadManagerTab('form');
+  clearLeadForm();
   document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('lead-name')?.focus();
 });
@@ -730,6 +756,14 @@ document.getElementById('first-run-import')?.addEventListener('click', () => {
 
 document.getElementById('first-run-demo')?.addEventListener('click', () => {
   document.getElementById('load-demo-leads')?.click();
+});
+
+document.getElementById('workspace-new-lead')?.addEventListener('click', () => {
+  setLeadManagerTab('form');
+  clearLeadForm();
+  setLeadManagerStatus('Ready for a new lead.');
+  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('lead-name')?.focus();
 });
 
 document.getElementById('lead-search')?.addEventListener('input', (event) => {
