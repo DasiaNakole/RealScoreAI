@@ -29,6 +29,23 @@
         <label>Message
           <textarea id="followup-body" rows="8"></textarea>
         </label>
+        <div class="panel form-panel" style="padding: 0.9rem; margin-top: 0.9rem;">
+          <h2 style="margin-top: 0;">Lead activity signals</h2>
+          <p class="meta">Track engagement and insert tracked listing links into follow-up emails.</p>
+          <label>Listing URL
+            <input id="tracking-destination-url" type="url" placeholder="https://example.com/listing/123" />
+          </label>
+          <div class="hero-actions">
+            <button id="create-tracking-link" class="btn btn-secondary" type="button">Create tracked link</button>
+            <button id="insert-tracking-link" class="btn btn-secondary" type="button">Insert tracked link</button>
+          </div>
+          <a id="tracking-url" class="meta" href="#" target="_blank" rel="noreferrer" style="display: none;"></a>
+          <div class="hero-actions" style="margin-top: 0.8rem;">
+            <button id="log-email-open" class="btn btn-secondary" type="button">Log email open</button>
+            <button id="log-listing-engagement" class="btn btn-secondary" type="button">Log listing engagement</button>
+          </div>
+          <p class="meta" id="tracking-status"></p>
+        </div>
         <button id="send-followup" class="btn btn-primary" type="button">Send follow-up</button>
       </section>
       <section class="panel form-panel">

@@ -644,6 +644,18 @@ async function applyAndPersistLeadEvent(lead, event, userId) {
   };
 }
 
+function normalizeLeadActivityEventType(rawType) {
+  const type = String(rawType || "").trim().toUpperCase();
+  const aliases = {
+    EMAIL_OPEN: "EMAIL_OPENED",
+    OPEN: "EMAIL_OPENED",
+    LINK_OPENED: "LINK_CLICKED",
+    CLICK: "LINK_CLICKED",
+    LISTING_CLICK: "LISTING_CLICKED"
+  };
+  return aliases[type] || type;
+}
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(new URL("../public", import.meta.url).pathname));
@@ -660,6 +672,18 @@ app.get("/r/:trackingId", async (req, res) => {
   if (!link) return res.status(404).send("Tracking link not found.");
 
   const updated = await bumpTrackingLinkClick(trackingId);
+  const lead = await getLeadById(link.lead_id);
+  if (lead) {
+    await applyAndPersistLeadEvent(
+      lead,
+      {
+        type: "LISTING_CLICKED",
+        value: "",
+        meta: { channel: link.channel, trackingId }
+      },
+      lead.userId
+    );
+  }
   await insertEvent({
     userId: link.user_id,
     leadId: link.lead_id,
@@ -1258,6 +1282,7 @@ app.post("/api/leads/:leadId/events", requireAuth, requireActiveAccess, async (r
 
 app.post("/api/webhooks/lead-activity", requireWebhookKey, async (req, res) => {
   const { leadId, leadEmail, eventType = "MESSAGE_RECEIVED", value = "", channel = "external", messageText = "" } = req.body || {};
+  const normalizedEventType = normalizeLeadActivityEventType(eventType);
 
   let lead = null;
   if (leadId) {
@@ -1275,14 +1300,19 @@ app.post("/api/webhooks/lead-activity", requireWebhookKey, async (req, res) => {
   const updated = await applyAndPersistLeadEvent(
     lead,
     {
-      type: String(eventType),
+      type: normalizedEventType,
       value,
       meta: { channel, messageText: String(messageText || value || "") }
     },
     lead.userId
   );
 
-  await insertEvent({ userId: lead.userId, leadId: lead.id, eventType: "webhook_received", metadata: { eventType, channel } });
+  await insertEvent({
+    userId: lead.userId,
+    leadId: lead.id,
+    eventType: "webhook_received",
+    metadata: { eventType: normalizedEventType, rawEventType: eventType, channel }
+  });
 
   return res.json({
     ok: true,

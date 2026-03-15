@@ -4,6 +4,7 @@ if (!token) window.location.href = '/login.html';
 
 let leadsCache = [];
 let account = null;
+let lastTrackingUrl = '';
 
 function hasAutomationAccess(planId) {
   const normalized = String(planId || '').trim().toLowerCase();
@@ -14,6 +15,28 @@ function setMessage(message, isError = false) {
   const node = document.getElementById('followups-message');
   node.textContent = message;
   node.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
+function setTrackingStatus(message, isError = false) {
+  const node = document.getElementById('tracking-status');
+  if (!node) return;
+  node.textContent = message;
+  node.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
+function setTrackingUrl(url) {
+  const node = document.getElementById('tracking-url');
+  if (!node) return;
+  lastTrackingUrl = String(url || '').trim();
+  if (!lastTrackingUrl) {
+    node.style.display = 'none';
+    node.href = '#';
+    node.textContent = '';
+    return;
+  }
+  node.style.display = '';
+  node.href = lastTrackingUrl;
+  node.textContent = lastTrackingUrl;
 }
 
 function renderSentLog() {
@@ -145,6 +168,85 @@ document.getElementById('send-followup').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('create-tracking-link')?.addEventListener('click', async () => {
+  const leadId = selectedLeadId();
+  if (!leadId) {
+    setTrackingStatus('Select a lead first.', true);
+    return;
+  }
+
+  const destinationUrl = document.getElementById('tracking-destination-url').value.trim();
+  if (!destinationUrl) {
+    setTrackingStatus('Enter a listing URL first.', true);
+    return;
+  }
+
+  try {
+    const data = await authedFetch(`/api/leads/${leadId}/tracking-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destinationUrl, channel: 'email' })
+    });
+    if (!data) return;
+    setTrackingUrl(data.link?.trackingUrl || '');
+    setTrackingStatus('Tracked link created.');
+  } catch (error) {
+    setTrackingStatus(error.message, true);
+  }
+});
+
+document.getElementById('insert-tracking-link')?.addEventListener('click', () => {
+  if (!lastTrackingUrl) {
+    setTrackingStatus('Create a tracked link first.', true);
+    return;
+  }
+
+  const bodyNode = document.getElementById('followup-body');
+  const spacer = bodyNode.value.trim().length ? '\n\n' : '';
+  bodyNode.value = `${bodyNode.value}${spacer}Property link: ${lastTrackingUrl}`.trim();
+  setTrackingStatus('Tracked link inserted into follow-up message.');
+});
+
+document.getElementById('log-email-open')?.addEventListener('click', async () => {
+  const leadId = selectedLeadId();
+  if (!leadId) {
+    setTrackingStatus('Select a lead first.', true);
+    return;
+  }
+
+  try {
+    await authedFetch(`/api/leads/${leadId}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'EMAIL_OPENED', value: 1, meta: { channel: 'manual_test' } })
+    });
+    setTrackingStatus('Email-open activity logged.');
+    await loadLeads();
+  } catch (error) {
+    setTrackingStatus(error.message, true);
+  }
+});
+
+document.getElementById('log-listing-engagement')?.addEventListener('click', async () => {
+  const leadId = selectedLeadId();
+  if (!leadId) {
+    setTrackingStatus('Select a lead first.', true);
+    return;
+  }
+
+  try {
+    await authedFetch(`/api/leads/${leadId}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'LISTING_ENGAGEMENT', value: 1, meta: { channel: 'manual_test' } })
+    });
+    setTrackingStatus('Listing-engagement activity logged.');
+    await loadLeads();
+  } catch (error) {
+    setTrackingStatus(error.message, true);
+  }
+});
+
 document.getElementById('logout-button').addEventListener('click', async () => {
   try {
     await fetch('/api/auth/logout', {
@@ -158,4 +260,5 @@ document.getElementById('logout-button').addEventListener('click', async () => {
 
 window.sentLogCache = [];
 renderSentLog();
+setTrackingUrl('');
 Promise.all([loadAccount(), loadLeads(), loadSentLog()]).catch((error) => setMessage(error.message, true));

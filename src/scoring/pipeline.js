@@ -42,6 +42,16 @@ export function applyLeadEvent(lead, event) {
     case "ENGAGEMENT_TOUCH_RECORDED":
       updated.signals.weeklyEngagementTouches = Number(event.value);
       break;
+    case "EMAIL_OPENED":
+      updated.signals.weeklyEngagementTouches = Number(updated.signals.weeklyEngagementTouches || 0) + 1;
+      break;
+    case "LINK_CLICKED":
+    case "LISTING_CLICKED":
+      updated.signals.weeklyEngagementTouches = Number(updated.signals.weeklyEngagementTouches || 0) + 1;
+      break;
+    case "LISTING_ENGAGEMENT":
+      updated.signals.weeklyEngagementTouches = Number(updated.signals.weeklyEngagementTouches || 0) + 2;
+      break;
     default:
       break;
   }
