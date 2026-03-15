@@ -182,6 +182,23 @@ function setTrackingUrl(url) {
   node.textContent = lastTrackingUrl;
 }
 
+function daysSinceIso(value) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) return null;
+  return Math.floor((Date.now() - ms) / (24 * 60 * 60 * 1000));
+}
+
+function buildLeadFollowupReasons(lead) {
+  const reasons = [];
+  const days = daysSinceIso(lead.lastContactedAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt);
+  if (days !== null) reasons.push(`Last contact was ${days} day(s) ago.`);
+  if (lead?.signals?.messageIntent) reasons.push(`Intent is ${lead.signals.messageIntent}.`);
+  const strongestReason = lead?.whyScore?.strongest?.reason;
+  if (strongestReason) reasons.push(strongestReason);
+  return reasons.slice(0, 3);
+}
+
 function renderScoreDetails(data) {
   document.getElementById('score-summary').textContent = data.whyScore.summary;
   document.getElementById('score-ai-meta').textContent = `Trend: ${data.behaviorTrend} | Confidence: ${data.confidenceScore}% | Intent confidence: ${Math.round((data.aiIntentClassification?.confidence || 0) * 100)}%`;
@@ -272,11 +289,19 @@ function leadItem(lead) {
   const li = document.createElement('li');
   li.className = `lead-item ${lead.score < 50 ? 'low' : ''}`;
   const checklistStage = lead.checklistStageLabel || STAGE_LABELS[normalizeLeadStage(lead.stage)] || 'Consultation';
+  const reasons = buildLeadFollowupReasons(lead)
+    .map((reason) => `<li>${reason}</li>`)
+    .join('');
   li.innerHTML = `
     <strong>${lead.name}</strong>
     <span class="meta">${lead.stage} | trend: ${lead.behaviorTrend}</span>
     <span class="score">Score: ${lead.score} | confidence: ${lead.confidenceScore}%</span>
     <span class="meta">Checklist stage: ${checklistStage}</span>
+    <span class="meta">Why this lead needs follow-up:</span>
+    <ul class="meta">${reasons}</ul>
+    <div class="hero-actions">
+      <button class="btn btn-secondary" data-followup-lead="${lead.id}">Send Follow-Up</button>
+    </div>
   `;
 
   li.addEventListener('click', async () => {
@@ -284,6 +309,11 @@ function leadItem(lead) {
     const explanation = await authedFetch(`/api/leads/${lead.id}/explanation`);
     if (!explanation) return;
     renderScoreDetails(explanation);
+  });
+
+  li.querySelector('[data-followup-lead]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    window.location.href = `/followups.html?leadId=${encodeURIComponent(lead.id)}`;
   });
 
   return li;
@@ -629,6 +659,25 @@ document.getElementById('insert-tracking-link')?.addEventListener('click', () =>
   const spacer = bodyNode.value.trim().length ? '\n\n' : '';
   bodyNode.value = `${bodyNode.value}${spacer}Property link: ${lastTrackingUrl}`.trim();
   setTrackingStatus('Tracked link inserted into follow-up message.');
+});
+
+document.getElementById('feedback-button')?.addEventListener('click', async () => {
+  const message = window.prompt('Send feedback or report an issue:');
+  if (!message) return;
+
+  try {
+    await authedFetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        page: 'dashboard',
+        message
+      })
+    });
+    setLeadManagerStatus('Thanks - feedback submitted.');
+  } catch (error) {
+    setLeadManagerStatus(error.message, true);
+  }
 });
 
 for (const step of PIPELINE_STEPS) {

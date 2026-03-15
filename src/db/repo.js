@@ -540,3 +540,13 @@ export async function bumpTrackingLinkClick(id) {
   );
   return result.rows[0] || null;
 }
+
+export async function createFeedback({ userId, page = "dashboard", message }) {
+  const result = await pool.query(
+    `insert into feedback (user_id, page, message)
+     values ($1, $2, $3)
+     returning id, user_id, page, message, created_at`,
+    [userId, page, message]
+  );
+  return result.rows[0];
+}

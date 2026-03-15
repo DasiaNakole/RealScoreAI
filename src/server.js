@@ -12,6 +12,7 @@ import { getSmtpStatus, sendEmail } from "./email/service.js";
 import { runSchema } from "./db/client.js";
 import {
   bumpTrackingLinkClick,
+  createFeedback,
   createTrackingLink,
   createUser,
   createLead,
@@ -1399,6 +1400,27 @@ app.get("/api/usage", requireAuth, requireActiveAccess, async (req, res) => {
   res.json({ userId: req.user.id, usage: await getUsageByUser(req.user.id) });
 });
 
+app.post("/api/feedback", requireAuth, async (req, res) => {
+  const message = String(req.body?.message || "").trim();
+  const page = String(req.body?.page || "dashboard").trim().toLowerCase();
+  if (!message) return res.status(400).json({ error: "message is required." });
+  if (message.length > 2000) return res.status(400).json({ error: "message is too long (max 2000 chars)." });
+
+  const feedback = await createFeedback({
+    userId: req.user.id,
+    page,
+    message
+  });
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "feedback_submitted",
+    metadata: { page, feedbackId: feedback.id }
+  });
+
+  res.status(201).json({ ok: true, feedback });
+});
+
 app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, res) => {
   const sentEvents = await listUserEventsByType(req.user.id, "followup_sent", 50);
   const profile = buildToneProfile(sentEvents);
@@ -1672,7 +1694,8 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
   if (!hasAutomationAccess(req.subscription?.planId)) {
     return res.status(403).json({ error: "Follow-up automation is available on Silver and Gold plans." });
   }
-  const autoSendEnabled = hasAutomationAccess(req.subscription?.planId);
+  const normalizedPlan = resolvePlanId(req.subscription?.planId);
+  const autoSendEnabled = normalizedPlan === "gold";
   const now = Date.now();
   const leads = await listLeadsByUser(req.user.id);
   const due = [];

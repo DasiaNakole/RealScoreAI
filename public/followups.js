@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'authToken';
 const token = localStorage.getItem(TOKEN_KEY);
 if (!token) window.location.href = '/login.html';
+const preselectedLeadId = new URLSearchParams(window.location.search).get('leadId') || '';
 
 let leadsCache = [];
 let account = null;
@@ -94,11 +95,15 @@ async function authedFetch(path, options = {}) {
 async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
-  const isPro = hasAutomationAccess(account.subscription?.planId);
+  const planId = String(account.subscription?.planId || '').trim().toLowerCase();
+  const hasAutomation = hasAutomationAccess(planId);
+  const isGold = planId === 'gold' || planId === 'platinum';
   const runButton = document.getElementById('run-cadence');
-  if (runButton) runButton.style.display = isPro ? '' : 'none';
-  if (!isPro) {
+  if (runButton) runButton.style.display = hasAutomation ? '' : 'none';
+  if (!hasAutomation) {
     setMessage('Bronze plan uses manual follow-ups only. Review suggestions and send manually.');
+  } else if (!isGold) {
+    setMessage('Silver uses a smart follow-up queue. Review/edit suggestions here and send manually.');
   }
 }
 
@@ -126,6 +131,9 @@ async function loadLeads() {
     option.textContent = `${lead.name} (${lead.score})`;
     select.appendChild(option);
   }
+  if (preselectedLeadId && leadsCache.some((lead) => lead.id === preselectedLeadId)) {
+    select.value = preselectedLeadId;
+  }
   if (leadsCache.length) await loadSuggestion();
 }
 
@@ -141,7 +149,11 @@ document.getElementById('run-cadence').addEventListener('click', async () => {
   try {
     const result = await authedFetch('/api/automation/followup-cadence', { method: 'POST' });
     if (!result) return;
-    setMessage(`Run follow ups complete. ${result.autoSentCount || 0} email(s) auto-sent, ${result.dueCount} lead(s) queued.`);
+    if (result.emailAutomationMode === 'manual_only') {
+      setMessage(`Run follow ups complete. ${result.dueCount} lead(s) queued for manual review.`);
+    } else {
+      setMessage(`Run follow ups complete. ${result.autoSentCount || 0} email(s) auto-sent, ${result.dueCount} lead(s) queued.`);
+    }
     await loadSentLog();
     await loadLeads();
   } catch (error) {
