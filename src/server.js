@@ -387,6 +387,144 @@ function toCsv(rows, columns) {
   return [header, ...lines].join("\n");
 }
 
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+}
+
+function parseCsvText(csvText) {
+  const normalized = String(csvText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  if (!normalized) return { headers: [], rows: [] };
+
+  const lines = normalized.split("\n").filter((line) => line.trim().length);
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const headers = parseCsvLine(lines[0]).map((header) => String(header || "").trim());
+  const rows = lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = String(values[index] || "").trim();
+    });
+    return row;
+  });
+
+  return { headers, rows };
+}
+
+function normalizeCsvHeader(header) {
+  return String(header || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function getRowValue(row, aliases) {
+  for (const alias of aliases) {
+    const match = Object.entries(row).find(([key]) => normalizeCsvHeader(key) === alias);
+    if (match && String(match[1] || "").trim()) {
+      return String(match[1]).trim();
+    }
+  }
+  return "";
+}
+
+function parseBooleanLike(value) {
+  return ["true", "yes", "1", "y", "checked"].includes(String(value || "").trim().toLowerCase());
+}
+
+function buildImportedLeadPayload(row) {
+  const stage = getRowValue(row, ["stage", "status", "lead_stage", "checklist_stage"]) || "consultation";
+  const followThroughSignal = getRowValue(row, ["follow_through_signal", "followthroughsignal", "follow_through", "followthrough"]);
+  const weeklyTouches = getRowValue(row, ["weekly_touches", "weekly_engagement_touches", "touches", "engagement_touches"]);
+  const responseTime = getRowValue(row, ["response_time_minutes", "response_time", "avg_response_delay_minutes", "response_delay_minutes"]);
+  const pipelineProgress = {};
+
+  for (const step of LEAD_PIPELINE_STEPS) {
+    pipelineProgress[step] = parseBooleanLike(getRowValue(row, [step]));
+  }
+
+  return {
+    name: getRowValue(row, ["name", "lead_name", "full_name"]),
+    email: getRowValue(row, ["email", "lead_email"]),
+    phone: getRowValue(row, ["phone", "phone_number", "mobile"]),
+    source: getRowValue(row, ["source", "lead_source"]),
+    notes: getRowValue(row, ["notes", "note"]),
+    lastContactedAt: getRowValue(row, ["last_contacted_at", "last_contacted", "last_contact_date"]) || null,
+    stage,
+    responseTimeMinutes: Number(responseTime || 60),
+    messageIntent: getRowValue(row, ["message_intent", "intent", "buyer_intent"]) || "unknown",
+    followThroughSignal,
+    followThroughRate: normalizeFollowThroughRate(getRowValue(row, ["follow_through_rate", "followthroughrate"]), followThroughSignal),
+    weeklyEngagementTouches: Number(weeklyTouches || 0),
+    pipelineProgress
+  };
+}
+
+function buildLeadRecordFromPayload(userId, payload) {
+  const signals = {
+    responseTimeMinutes: Number(payload.responseTimeMinutes),
+    messageIntent: String(payload.messageIntent),
+    followThroughRate: normalizeFollowThroughRate(payload.followThroughRate, payload.followThroughSignal),
+    weeklyEngagementTouches: Number(payload.weeklyEngagementTouches)
+  };
+  const normalizedProgress = normalizePipelineProgress(payload.pipelineProgress);
+  const normalizedStage = normalizeLeadStage(payload.stage) || stageFromPipeline(normalizedProgress);
+  const closedAt = normalizedProgress.closed || normalizedStage === "closed"
+    ? new Date().toISOString()
+    : null;
+
+  const scored = calculateLeadScore(signals, { pipelineProgress: normalizedProgress });
+
+  return {
+    userId,
+    name: String(payload.name).trim(),
+    email: String(payload.email).trim().toLowerCase(),
+    phone: payload.phone ? String(payload.phone).trim() : null,
+    source: payload.source ? String(payload.source).trim() : null,
+    notes: payload.notes ? String(payload.notes).trim() : null,
+    lastContactedAt: normalizeOptionalIsoDate(payload.lastContactedAt),
+    status: normalizedStage,
+    score: scored.score,
+    bucket: scored.bucket,
+    signals,
+    behaviorTrend: "stable",
+    confidenceScore: 60,
+    pipelineProgress: normalizedProgress,
+    closedAt,
+    lastActivityAt: new Date().toISOString(),
+    whyScore: scored.whyScore
+  };
+}
+
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
   replied: 0.35,
@@ -1203,6 +1341,75 @@ app.post("/api/leads", requireAuth, requireActiveAccess, async (req, res) => {
   });
 
   res.status(201).json({ lead: { ...lead, whyScore: scored.whyScore } });
+});
+
+app.post("/api/leads/import-csv", requireAuth, requireActiveAccess, async (req, res) => {
+  const csvText = String(req.body?.csvText || "");
+  const updateExisting = req.body?.updateExisting !== false;
+  const parsed = parseCsvText(csvText);
+
+  if (!parsed.headers.length) {
+    return res.status(400).json({ error: "CSV file is empty or invalid." });
+  }
+
+  const created = [];
+  const updated = [];
+  const skipped = [];
+
+  for (let index = 0; index < parsed.rows.length; index += 1) {
+    const row = parsed.rows[index];
+    const payload = buildImportedLeadPayload(row);
+    const rowNumber = index + 2;
+
+    if (!payload.name || !payload.email) {
+      skipped.push({ row: rowNumber, reason: "Missing required name or email." });
+      continue;
+    }
+
+    try {
+      const record = buildLeadRecordFromPayload(req.user.id, payload);
+      const existing = await getLeadByEmailForUser(record.email, req.user.id);
+
+      if (existing && !updateExisting) {
+        skipped.push({ row: rowNumber, reason: `Lead with email ${record.email} already exists.` });
+        continue;
+      }
+
+      if (existing) {
+        const lead = await updateLeadForUser(existing.id, req.user.id, {
+          ...existing,
+          ...record,
+          stage: record.status
+        });
+        updated.push(lead);
+        await insertEvent({
+          userId: req.user.id,
+          leadId: lead.id,
+          eventType: "lead_imported",
+          metadata: { source: "csv_import", action: "updated", row: rowNumber }
+        });
+      } else {
+        const lead = await createLead(record);
+        created.push(lead);
+        await insertEvent({
+          userId: req.user.id,
+          leadId: lead.id,
+          eventType: "lead_imported",
+          metadata: { source: "csv_import", action: "created", row: rowNumber }
+        });
+      }
+    } catch (error) {
+      skipped.push({ row: rowNumber, reason: error.message || "Import failed for this row." });
+    }
+  }
+
+  res.json({
+    ok: true,
+    createdCount: created.length,
+    updatedCount: updated.length,
+    skippedCount: skipped.length,
+    skipped
+  });
 });
 
 app.put("/api/leads/:leadId", requireAuth, requireActiveAccess, async (req, res) => {

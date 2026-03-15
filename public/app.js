@@ -174,6 +174,13 @@ function setTrackingStatus(message, isError = false) {
   node.style.color = isError ? '#ff5f7a' : '#9aa8be';
 }
 
+function setImportStatus(message, isError = false) {
+  const node = document.getElementById('lead-import-status');
+  if (!node) return;
+  node.textContent = message;
+  node.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
 function setTrackingUrl(url) {
   const node = document.getElementById('tracking-url');
   if (!node) return;
@@ -545,6 +552,43 @@ document.getElementById('load-demo-leads')?.addEventListener('click', async () =
     await loadDashboard();
   } catch (error) {
     setLeadManagerStatus(error.message, true);
+  }
+});
+
+document.getElementById('lead-csv-import')?.addEventListener('click', async () => {
+  const fileInput = document.getElementById('lead-csv-file');
+  const updateExisting = document.getElementById('lead-csv-update-existing')?.checked !== false;
+  const file = fileInput?.files?.[0];
+
+  if (!file) {
+    setImportStatus('Choose a CSV file first.', true);
+    return;
+  }
+
+  try {
+    const csvText = await file.text();
+    if (!csvText.trim()) {
+      setImportStatus('The selected CSV file is empty.', true);
+      return;
+    }
+
+    setImportStatus('Importing leads...');
+    const result = await authedFetch('/api/leads/import-csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        csvText,
+        updateExisting
+      })
+    });
+    if (!result) return;
+
+    const summary = `${result.createdCount || 0} created, ${result.updatedCount || 0} updated, ${result.skippedCount || 0} skipped.`;
+    setImportStatus(summary);
+    fileInput.value = '';
+    await loadDashboard();
+  } catch (error) {
+    setImportStatus(error.message, true);
   }
 });
 

@@ -165,6 +165,27 @@
               </div>
             </form>
             <p id="lead-manager-status" class="meta"></p>
+            <section class="import-panel">
+              <div class="panel-toolbar">
+                <div>
+                  <h3>Import CSV</h3>
+                  <p class="meta">Upload a spreadsheet of leads. Supported columns include name, email, phone, source, notes, stage, response time, intent, follow-through signal, weekly touches, and last contacted.</p>
+                </div>
+              </div>
+              <div class="import-grid">
+                <label class="full-width">CSV file
+                  <input id="lead-csv-file" type="file" accept=".csv,text/csv" />
+                </label>
+                <label class="import-checkbox">
+                  <input id="lead-csv-update-existing" type="checkbox" checked />
+                  Update existing leads when email matches
+                </label>
+                <div class="hero-actions">
+                  <button id="lead-csv-import" class="btn btn-secondary" type="button">Import CSV</button>
+                </div>
+              </div>
+              <p id="lead-import-status" class="meta"></p>
+            </section>
             <div id="lead-manager-list" class="lead-manager-list"></div>
           </section>
 
