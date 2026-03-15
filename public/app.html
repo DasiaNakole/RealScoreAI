@@ -44,6 +44,35 @@
         </article>
       </section>
 
+      <section id="first-run-panel" class="panel first-run-panel" style="display: none;">
+        <div class="panel-toolbar">
+          <div>
+            <h2>Start your workspace</h2>
+            <p class="meta">Add a lead, import your list, or load demo data. Once you have leads, RealScoreAI will score them and show who needs attention first.</p>
+          </div>
+        </div>
+        <div class="first-run-actions">
+          <button id="first-run-add-lead" class="btn btn-primary" type="button">Add Your First Lead</button>
+          <button id="first-run-import" class="btn btn-secondary" type="button">Import CSV</button>
+          <button id="first-run-demo" class="btn btn-secondary" type="button">Load Demo Leads</button>
+        </div>
+        <div class="first-run-notes">
+          <article class="first-run-card">
+            <strong>Add manually</strong>
+            <span class="meta">Start with one lead and let the system score it immediately.</span>
+          </article>
+          <article class="first-run-card">
+            <strong>Import your pipeline</strong>
+            <span class="meta">Bring in a CSV if you already have leads in another tool or spreadsheet.</span>
+          </article>
+          <article class="first-run-card">
+            <strong>Try demo data</strong>
+            <span class="meta">Use example leads to understand the dashboard before adding real clients.</span>
+          </article>
+        </div>
+      </section>
+
+      <div id="dashboard-workspace">
       <section class="panel spotlight-panel">
         <div class="panel-toolbar">
           <div>
@@ -251,6 +280,7 @@
           </section>
         </aside>
       </section>
+      </div>
 
       <section id="feedback-modal" class="panel form-panel" style="display: none; max-width: 720px; margin: 1rem auto 0;">
         <h2>Send Feedback</h2>

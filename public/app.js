@@ -377,6 +377,13 @@ function renderDashboardStats(data = {}) {
   setText('stat-preapproval-pending', preapprovalPending);
 }
 
+function setWorkspaceMode(isEmpty) {
+  const firstRunPanel = document.getElementById('first-run-panel');
+  const workspace = document.getElementById('dashboard-workspace');
+  if (firstRunPanel) firstRunPanel.style.display = isEmpty ? '' : 'none';
+  if (workspace) workspace.style.display = isEmpty ? 'none' : '';
+}
+
 function renderPickupSummary(summary) {
   const messageNode = document.getElementById('pickup-summary-message');
   const listNode = document.getElementById('pickup-summary-list');
@@ -592,7 +599,9 @@ async function loadDashboard() {
 
   await loadLeadManager();
   renderDashboardStats(data);
-  if (!allLeadsCache.length) {
+  const isEmpty = !allLeadsCache.length;
+  setWorkspaceMode(isEmpty);
+  if (isEmpty) {
     setLeadManagerStatus('Welcome to RealScoreAI beta -- add your first lead to start tracking follow-ups.');
   }
 }
@@ -648,6 +657,24 @@ document.getElementById('load-demo-leads')?.addEventListener('click', async () =
   } catch (error) {
     setLeadManagerStatus(error.message, true);
   }
+});
+
+document.getElementById('first-run-add-lead')?.addEventListener('click', () => {
+  setWorkspaceMode(false);
+  setLeadManagerTab('form');
+  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('lead-name')?.focus();
+});
+
+document.getElementById('first-run-import')?.addEventListener('click', () => {
+  setWorkspaceMode(false);
+  setLeadManagerTab('import');
+  document.querySelector('.lead-manager-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('lead-csv-file')?.focus();
+});
+
+document.getElementById('first-run-demo')?.addEventListener('click', () => {
+  document.getElementById('load-demo-leads')?.click();
 });
 
 document.getElementById('lead-search')?.addEventListener('input', (event) => {
