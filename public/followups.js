@@ -6,6 +6,8 @@ const preselectedLeadId = new URLSearchParams(window.location.search).get('leadI
 let leadsCache = [];
 let account = null;
 let lastTrackingUrl = '';
+let automationEnabled = false;
+let automationPlanId = '';
 
 function hasAutomationAccess(planId) {
   const normalized = String(planId || '').trim().toLowerCase();
@@ -109,27 +111,54 @@ async function authedFetch(path, options = {}) {
   return data;
 }
 
+function updateAutomationUi({ enabled, planId, autoSend }) {
+  automationEnabled = Boolean(enabled);
+  automationPlanId = String(planId || '').trim().toLowerCase();
+
+  const planLabel = automationPlanId === 'silver'
+    ? 'Silver'
+    : automationPlanId === 'gold'
+      ? 'Gold'
+      : automationPlanId
+        ? automationPlanId.charAt(0).toUpperCase() + automationPlanId.slice(1)
+        : 'Bronze';
+
+  const runButton = document.getElementById('run-cadence');
+  const toggle = document.getElementById('auto-send-toggle');
+  const saveButton = document.getElementById('save-automation-settings');
+  const planNote = document.getElementById('automation-plan-note');
+
+  if (runButton) runButton.disabled = !automationEnabled;
+  if (toggle) {
+    toggle.checked = Boolean(autoSend);
+    toggle.disabled = !automationEnabled;
+  }
+  if (saveButton) saveButton.disabled = !automationEnabled;
+  if (planNote) {
+    planNote.textContent = automationEnabled
+      ? `${planLabel} plan includes automation. Turn auto-send on if you want Run follow ups to send due messages automatically.`
+      : `${planLabel} plan uses manual follow-ups. You can still review suggestions and send emails yourself.`;
+  }
+
+  if (!automationEnabled) {
+    setMessage('Manual follow-up mode is active. Review suggestions and send manually.', false);
+  } else if (Boolean(autoSend)) {
+    setMessage(`${planLabel} automation is ON. Run follow ups will auto-send due messages.`);
+  } else {
+    setMessage(`${planLabel} automation is available. Auto-send is OFF, so due follow-ups will queue for manual review.`);
+  }
+}
+
 async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
+
   const settings = await authedFetch('/api/automation/settings');
   const planId = resolveAutomationPlanId(account, settings);
   const hasAutomation = Boolean(settings?.settings?.automationAllowed) || hasAutomationAccess(planId);
-  const runButton = document.getElementById('run-cadence');
-  const toggleWrap = document.getElementById('automation-toggle-wrap');
-  const toggle = document.getElementById('auto-send-toggle');
-  const saveButton = document.getElementById('save-automation-settings');
-  if (runButton) runButton.style.display = hasAutomation ? '' : 'none';
-  if (toggleWrap) toggleWrap.style.display = hasAutomation ? '' : 'none';
-  if (toggle) toggle.checked = Boolean(settings?.settings?.autoSendFollowups ?? account.user?.autoSendFollowups);
-  if (saveButton) saveButton.disabled = !hasAutomation;
-  if (!hasAutomation) {
-    setMessage('Bronze plan uses manual follow-ups only. Review suggestions and send manually.');
-  } else if (toggle?.checked) {
-    setMessage(`${planId === 'silver' ? 'Silver' : 'Gold'} automation is ON. Run follow ups will auto-send due messages.`);
-  } else {
-    setMessage(`${planId === 'silver' ? 'Silver' : 'Gold'} automation is available. Auto-send is OFF, so due follow-ups will queue for manual review.`);
-  }
+  const autoSend = Boolean(settings?.settings?.autoSendFollowups ?? account.user?.autoSendFollowups);
+
+  updateAutomationUi({ enabled: hasAutomation, planId, autoSend });
 }
 
 function selectedLeadId() {
@@ -167,7 +196,7 @@ document.getElementById('lead-select').addEventListener('change', () => {
 });
 
 document.getElementById('run-cadence').addEventListener('click', async () => {
-  if (!hasAutomationAccess(account?.subscription?.planId)) {
+  if (!automationEnabled) {
     setMessage('Run follow ups is available on Silver and Gold plans.', true);
     return;
   }
@@ -209,6 +238,11 @@ document.getElementById('save-automation-settings')?.addEventListener('click', a
   const toggle = document.getElementById('auto-send-toggle');
   if (!toggle) return;
 
+  if (!automationEnabled) {
+    setAutomationSettingsStatus('Automation settings are only available on Silver and Gold plans.', true);
+    return;
+  }
+
   try {
     const result = await authedFetch('/api/automation/settings', {
       method: 'PUT',
@@ -218,10 +252,12 @@ document.getElementById('save-automation-settings')?.addEventListener('click', a
     if (!result) return;
     account.user = account.user || {};
     account.user.autoSendFollowups = Boolean(result.settings?.autoSendFollowups);
+    updateAutomationUi({
+      enabled: automationEnabled,
+      planId: automationPlanId,
+      autoSend: account.user.autoSendFollowups
+    });
     setAutomationSettingsStatus(`Saved. Auto-send is ${account.user.autoSendFollowups ? 'ON' : 'OFF'}.`);
-    setMessage(account.user.autoSendFollowups
-      ? 'Auto-send is ON. Run follow ups will send due messages automatically.'
-      : 'Auto-send is OFF. Run follow ups will queue due messages for manual review.');
   } catch (error) {
     setAutomationSettingsStatus(error.message, true);
   }
@@ -318,6 +354,6 @@ document.getElementById('logout-button').addEventListener('click', async () => {
 });
 
 window.sentLogCache = [];
-renderSentLog();
-setTrackingUrl('');
-Promise.all([loadAccount(), loadLeads(), loadSentLog()]).catch((error) => setMessage(error.message, true));
+loadAccount()
+  .then(() => Promise.all([loadLeads(), loadSentLog()]))
+  .catch((error) => setMessage(error.message, true));
