@@ -11,136 +11,170 @@
   </head>
   <body>
     <main class="dashboard">
-      <header class="dash-head">
-        <div>
+      <header class="dash-topbar">
+        <div class="dash-intro">
           <p class="badge">Agent Command Center</p>
           <h1>Today's Focus</h1>
-          <p class="meta">RealScoreAI is currently in beta. Feedback is greatly appreciated.</p>
+          <p class="meta panel-note">RealScoreAI is currently in beta. Feedback is greatly appreciated.</p>
           <p class="meta" id="welcome-name"></p>
         </div>
-        <div class="hero-actions">
+        <div class="hero-actions dash-actions">
           <button id="feedback-button" class="btn btn-secondary" type="button">Send Feedback</button>
           <a class="btn btn-secondary" href="portal.html">Back to Portal</a>
           <button id="logout-button" class="btn btn-secondary" type="button">Logout</button>
         </div>
       </header>
 
-      <section class="panel">
-        <h2>Pick up where you left off</h2>
-        <p id="pickup-summary-message" class="meta">Checking your lead activity...</p>
-        <div id="pickup-summary-list" class="invite-list"></div>
-      </section>
-
-      <section class="cards-grid">
-        <article class="panel">
-          <h2 class="small-heading">Top 5 Clients (active)</h2>
-          <p class="meta">Clients working towards closing</p>
-          <ul id="top5-clients" class="lead-list"></ul>
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span>Total leads</span>
+          <strong id="stat-total-leads">0</strong>
         </article>
-        <article class="panel">
-          <h2 class="small-heading">On deck (active) [check in every 30 days]</h2>
-          <p class="meta">Clients working towards preapproval [Credit repair/can’t get financing]</p>
-          <ul id="on-deck-clients" class="lead-list"></ul>
+        <article class="stat-card">
+          <span>Priority today</span>
+          <strong id="stat-priority-today">0</strong>
         </article>
-        <article class="panel">
-          <h2 class="small-heading">Potentials (Inactive)</h2>
-          <p class="meta">Clients expressing interest, but haven’t decided to move forward</p>
-          <ul id="potentials-clients" class="lead-list"></ul>
+        <article class="stat-card">
+          <span>Working toward closing</span>
+          <strong id="stat-closing-track">0</strong>
+        </article>
+        <article class="stat-card">
+          <span>Preapproval pending</span>
+          <strong id="stat-preapproval-pending">0</strong>
         </article>
       </section>
 
-      <section class="panel lead-manager-panel">
-        <h2>Lead Manager</h2>
-        <form id="lead-form" class="lead-form-grid">
-          <input type="hidden" id="lead-id" />
-          <label>Name <input id="lead-name" required /></label>
-          <label>Email <input id="lead-email" type="email" required /></label>
-          <label>Phone <input id="lead-phone" /></label>
-          <label>Source <input id="lead-source" placeholder="Zillow, referral, open house" /></label>
-          <label>Last contacted
-            <input id="lead-last-contacted" type="date" />
-          </label>
-          <label class="full-width">Notes
-            <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
-          </label>
-          <label>Status
-            <select id="lead-stage">
-              <option value="consultation">Consultation</option>
-              <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
-              <option value="preapproval">Preapproval</option>
-              <option value="home_search">Home Search</option>
-              <option value="schedule_visits">Schedule Visits</option>
-              <option value="home_inspection">Home Inspection</option>
-              <option value="appraisal">Appraisal</option>
-              <option value="sign_documents">Sign Documents</option>
-              <option value="closing">Closing</option>
-              <option value="closed">Closed</option>
-              <option value="nurture">Nurture</option>
-            </select>
-          </label>
-          <fieldset class="pipeline-checklist">
-            <legend>Lead Progress Checklist</legend>
-            <label><input type="checkbox" id="pipeline-consultation" /> Consultation</label>
-            <label><input type="checkbox" id="pipeline-exclusive_buyer_agreement" /> Exclusive Buyer Agreement (EBA)</label>
-            <label class="critical-step"><input type="checkbox" id="pipeline-preapproval" /> Preapproval (CRUCIAL)</label>
-            <label><input type="checkbox" id="pipeline-home_search" /> Home Search</label>
-            <label><input type="checkbox" id="pipeline-schedule_visits" /> Schedule Visits</label>
-            <label><input type="checkbox" id="pipeline-home_inspection" /> Home Inspection</label>
-            <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
-            <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
-            <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
-            <label><input type="checkbox" id="pipeline-closed" /> Closed</label>
-          </fieldset>
-          <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
-          <label>Buyer Intent
-            <select id="lead-intent">
-              <option value="hot">hot (ready now)</option>
-              <option value="warm">warm (shopping soon)</option>
-              <option value="neutral">neutral (researching)</option>
-              <option value="cold">cold (long timeline)</option>
-              <option value="unknown">unknown</option>
-            </select>
-          </label>
-          <label>Follow-Through Signal
-            <select id="lead-follow-through-signal">
-              <option value="none">none yet</option>
-              <option value="replied">replied quickly</option>
-              <option value="docs_shared">docs/pre-qual shared</option>
-              <option value="tour_booked">tour booked</option>
-              <option value="multiple_tours">multiple tours completed</option>
-              <option value="offer_submitted">offer submitted</option>
-            </select>
-          </label>
-          <input id="lead-follow-through" type="hidden" value="0" />
-          <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
-          <div class="hero-actions">
-            <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
-            <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>
-            <button id="load-demo-leads" class="btn btn-secondary" type="button">Load demo leads (optional)</button>
-          </div>
-        </form>
-        <p id="lead-manager-status" class="meta"></p>
-        <div id="lead-manager-list" class="lead-manager-list"></div>
-      </section>
+      <section class="content-grid">
+        <div class="main-column">
+          <section class="panel">
+            <h2>Pick up where you left off</h2>
+            <p id="pickup-summary-message" class="meta">Checking your lead activity...</p>
+            <div id="pickup-summary-list" class="invite-list"></div>
+          </section>
 
-      <section class="panel explanation">
-        <h2>Why this score?</h2>
-        <p id="score-summary">Select a lead to view scoring breakdown.</p>
-        <p id="score-ai-meta" class="meta"></p>
-        <div id="score-details"></div>
-      </section>
+          <section class="cards-grid">
+            <article class="panel">
+              <h2 class="small-heading">Top 5 Clients (active)</h2>
+              <p class="meta">Clients working towards closing</p>
+              <ul id="top5-clients" class="lead-list"></ul>
+            </article>
+            <article class="panel">
+              <h2 class="small-heading">On deck (active) [check in every 30 days]</h2>
+              <p class="meta">Clients working towards preapproval [Credit repair/can’t get financing]</p>
+              <ul id="on-deck-clients" class="lead-list"></ul>
+            </article>
+            <article class="panel">
+              <h2 class="small-heading">Potentials (Inactive)</h2>
+              <p class="meta">Clients expressing interest, but haven’t decided to move forward</p>
+              <ul id="potentials-clients" class="lead-list"></ul>
+            </article>
+          </section>
 
-      <section class="panel">
-        <h2>Due for a follow up</h2>
-        <p class="meta">Follow-up suggestions are based on lead score, time since last contact, and engagement activity.</p>
-        <p id="cadence-status" class="meta">Silver and Gold plans support follow-up automation. Bronze uses manual follow-ups.</p>
-        <div id="cadence-queue" class="invite-list"></div>
-        <div class="hero-actions">
-          <button id="load-tone-profile" class="btn btn-secondary" type="button">Load my tone profile</button>
-          <a class="btn btn-secondary" href="followups.html">Open Follow-Ups Page</a>
-          <a class="btn btn-secondary" href="closed.html">Open Closed Clients Page</a>
+          <section class="panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Due for a follow up</h2>
+                <p class="meta">Follow-up suggestions are based on lead score, time since last contact, and engagement activity.</p>
+              </div>
+              <div class="hero-actions">
+                <button id="load-tone-profile" class="btn btn-secondary" type="button">Load my tone profile</button>
+                <a class="btn btn-secondary" href="followups.html">Open Follow-Ups Page</a>
+                <a class="btn btn-secondary" href="closed.html">Open Closed Clients Page</a>
+              </div>
+            </div>
+            <p id="cadence-status" class="meta">Silver and Gold plans support follow-up automation. Bronze uses manual follow-ups.</p>
+            <div id="cadence-queue" class="invite-list"></div>
+            <p id="tone-profile" class="meta"></p>
+          </section>
         </div>
-        <p id="tone-profile" class="meta"></p>
+
+        <aside class="side-column">
+          <section class="panel lead-manager-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Lead Manager</h2>
+                <p class="meta">Add, update, and organize lead intelligence without leaving the dashboard.</p>
+              </div>
+            </div>
+            <form id="lead-form" class="lead-form-grid">
+              <input type="hidden" id="lead-id" />
+              <label>Name <input id="lead-name" required /></label>
+              <label>Email <input id="lead-email" type="email" required /></label>
+              <label>Phone <input id="lead-phone" /></label>
+              <label>Source <input id="lead-source" placeholder="Zillow, referral, open house" /></label>
+              <label>Last contacted
+                <input id="lead-last-contacted" type="date" />
+              </label>
+              <label class="full-width">Notes
+                <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
+              </label>
+              <label>Status
+                <select id="lead-stage">
+                  <option value="consultation">Consultation</option>
+                  <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
+                  <option value="preapproval">Preapproval</option>
+                  <option value="home_search">Home Search</option>
+                  <option value="schedule_visits">Schedule Visits</option>
+                  <option value="home_inspection">Home Inspection</option>
+                  <option value="appraisal">Appraisal</option>
+                  <option value="sign_documents">Sign Documents</option>
+                  <option value="closing">Closing</option>
+                  <option value="closed">Closed</option>
+                  <option value="nurture">Nurture</option>
+                </select>
+              </label>
+              <fieldset class="pipeline-checklist">
+                <legend>Lead Progress Checklist</legend>
+                <label><input type="checkbox" id="pipeline-consultation" /> Consultation</label>
+                <label><input type="checkbox" id="pipeline-exclusive_buyer_agreement" /> Exclusive Buyer Agreement (EBA)</label>
+                <label class="critical-step"><input type="checkbox" id="pipeline-preapproval" /> Preapproval (CRUCIAL)</label>
+                <label><input type="checkbox" id="pipeline-home_search" /> Home Search</label>
+                <label><input type="checkbox" id="pipeline-schedule_visits" /> Schedule Visits</label>
+                <label><input type="checkbox" id="pipeline-home_inspection" /> Home Inspection</label>
+                <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
+                <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
+                <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
+                <label><input type="checkbox" id="pipeline-closed" /> Closed</label>
+              </fieldset>
+              <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
+              <label>Buyer Intent
+                <select id="lead-intent">
+                  <option value="hot">hot (ready now)</option>
+                  <option value="warm">warm (shopping soon)</option>
+                  <option value="neutral">neutral (researching)</option>
+                  <option value="cold">cold (long timeline)</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </label>
+              <label>Follow-Through Signal
+                <select id="lead-follow-through-signal">
+                  <option value="none">none yet</option>
+                  <option value="replied">replied quickly</option>
+                  <option value="docs_shared">docs/pre-qual shared</option>
+                  <option value="tour_booked">tour booked</option>
+                  <option value="multiple_tours">multiple tours completed</option>
+                  <option value="offer_submitted">offer submitted</option>
+                </select>
+              </label>
+              <input id="lead-follow-through" type="hidden" value="0" />
+              <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
+              <div class="hero-actions">
+                <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
+                <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>
+                <button id="load-demo-leads" class="btn btn-secondary" type="button">Load demo leads (optional)</button>
+              </div>
+            </form>
+            <p id="lead-manager-status" class="meta"></p>
+            <div id="lead-manager-list" class="lead-manager-list"></div>
+          </section>
+
+          <section class="panel explanation">
+            <h2>Why this score?</h2>
+            <p id="score-summary">Select a lead to view scoring breakdown.</p>
+            <p id="score-ai-meta" class="meta"></p>
+            <div id="score-details"></div>
+          </section>
+        </aside>
       </section>
 
       <section id="feedback-modal" class="panel form-panel" style="display: none; max-width: 720px; margin: 1rem auto 0;">

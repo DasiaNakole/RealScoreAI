@@ -258,6 +258,26 @@ function renderCadenceQueue() {
   });
 }
 
+function setText(id, value) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = String(value);
+}
+
+function renderDashboardStats(data = {}) {
+  const totalLeads = allLeadsCache.length;
+  const priorityToday = cadenceDueCache.length || (data.pickupSummary?.leads || []).length;
+  const closingTrack = allLeadsCache.filter((lead) => {
+    const stage = normalizeLeadStage(lead.stage);
+    return ['schedule_visits', 'home_inspection', 'appraisal', 'sign_documents', 'closing', 'closed'].includes(stage);
+  }).length;
+  const preapprovalPending = allLeadsCache.filter((lead) => !Boolean(lead.pipelineProgress?.preapproval)).length;
+
+  setText('stat-total-leads', totalLeads);
+  setText('stat-priority-today', priorityToday);
+  setText('stat-closing-track', closingTrack);
+  setText('stat-preapproval-pending', preapprovalPending);
+}
+
 function renderPickupSummary(summary) {
   const messageNode = document.getElementById('pickup-summary-message');
   const listNode = document.getElementById('pickup-summary-list');
@@ -470,6 +490,7 @@ async function loadDashboard() {
   }
 
   await loadLeadManager();
+  renderDashboardStats(data);
   if (!allLeadsCache.length) {
     setLeadManagerStatus('Welcome to RealScoreAI beta -- add your first lead to start tracking follow-ups.');
   }
