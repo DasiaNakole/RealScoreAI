@@ -375,7 +375,14 @@ body[data-theme="light"] .btn-secondary {
 
 .priority-stack {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(160px, auto);
   gap: 16px;
+  align-content: start;
+}
+
+.priority-primary {
+  grid-column: 1 / -1;
 }
 
 .stats-grid {
@@ -926,6 +933,14 @@ body[data-theme="light"] .lead-item {
 
   .overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .priority-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .priority-primary {
+    grid-column: auto;
   }
 
   .workspace-grid {
