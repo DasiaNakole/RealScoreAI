@@ -8,6 +8,7 @@ let account = null;
 let lastTrackingUrl = '';
 let automationEnabled = false;
 let automationPlanId = '';
+let billingPlanId = '';
 
 function hasAutomationAccess(planId) {
   const normalized = String(planId || '').trim().toLowerCase();
@@ -21,6 +22,14 @@ function resolveAutomationPlanId(account, settings) {
     account?.subscription?.planId ||
     account?.subscription?.plan ||
     account?.user?.planId ||
+    ''
+  ).trim().toLowerCase();
+}
+
+function resolveBillingPlanId(billingStatus) {
+  return String(
+    billingStatus?.subscription?.planId ||
+    billingStatus?.subscription?.plan ||
     ''
   ).trim().toLowerCase();
 }
@@ -122,7 +131,7 @@ function updateAutomationUi({ enabled, planId, autoSend }) {
       ? 'Gold'
       : automationPlanId
         ? automationPlanId.charAt(0).toUpperCase() + automationPlanId.slice(1)
-        : 'Bronze';
+        : 'Unknown';
 
   const runButton = document.getElementById('run-cadence');
   const toggle = document.getElementById('auto-send-toggle');
@@ -154,13 +163,18 @@ async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
 
+  const billingStatus = await authedFetch('/api/billing/status');
   const settings = await authedFetch('/api/automation/settings');
-  const planId = resolveAutomationPlanId(account, settings);
+  billingPlanId = resolveBillingPlanId(billingStatus);
+  const planId = resolveAutomationPlanId(account, settings) || billingPlanId;
   const hasAutomation = Boolean(settings?.settings?.automationAllowed) || hasAutomationAccess(planId);
   const autoSend = Boolean(settings?.settings?.autoSendFollowups ?? account.user?.autoSendFollowups);
 
   updateAutomationUi({ enabled: hasAutomation, planId, autoSend });
-  setAutomationSettingsStatus(`Server plan detected: ${planId || 'unknown'}${hasAutomation ? ' | automation available' : ' | manual only'}.`);
+  const mismatch = billingPlanId && planId && billingPlanId !== planId
+    ? ` Plan mismatch detected: billing=${billingPlanId}, automation=${planId}.`
+    : '';
+  setAutomationSettingsStatus(`Server plan detected: ${planId || 'unknown'}${hasAutomation ? ' | automation available' : ' | manual only'}.${mismatch}`);
 }
 
 function selectedLeadId() {
