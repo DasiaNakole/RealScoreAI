@@ -16,6 +16,7 @@ function hasAutomationAccess(planId) {
 
 function resolveAutomationPlanId(account, settings) {
   return String(
+    settings?.settings?.planId ||
     settings?.planId ||
     account?.subscription?.planId ||
     account?.subscription?.plan ||
@@ -159,6 +160,7 @@ async function loadAccount() {
   const autoSend = Boolean(settings?.settings?.autoSendFollowups ?? account.user?.autoSendFollowups);
 
   updateAutomationUi({ enabled: hasAutomation, planId, autoSend });
+  setAutomationSettingsStatus(`Server plan detected: ${planId || 'unknown'}${hasAutomation ? ' | automation available' : ' | manual only'}.`);
 }
 
 function selectedLeadId() {
