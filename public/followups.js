@@ -138,7 +138,7 @@ function updateAutomationUi({ enabled, planId, autoSend }) {
   if (planNote) {
     planNote.textContent = automationEnabled
       ? `${planLabel} plan includes automation. Turn auto-send on if you want Run follow ups to send due messages automatically.`
-      : `${planLabel} plan uses manual follow-ups. You can still review suggestions and send emails yourself.`;
+      : `This account is currently in manual follow-up mode. You can still review suggestions and send emails yourself.`;
   }
 
   if (!automationEnabled) {
