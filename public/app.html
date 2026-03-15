@@ -169,6 +169,10 @@
             </div>
             <p id="lead-manager-status" class="meta"></p>
             <section class="manager-view active" id="manager-view-form" data-manager-view="form">
+              <div class="hero-actions" style="margin-top: 0;">
+                <button id="toggle-advanced-fields" class="btn btn-secondary" type="button" aria-expanded="false">Show advanced scoring fields</button>
+                <a id="download-sample-csv" class="btn btn-secondary" href="#" download="realscoreai-sample-import.csv">Download sample CSV</a>
+              </div>
               <form id="lead-form" class="lead-form-grid">
                 <input type="hidden" id="lead-id" />
                 <label>Name <input id="lead-name" required /></label>
@@ -181,6 +185,7 @@
                 <label class="full-width">Notes
                   <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
                 </label>
+                <div id="advanced-fields" class="advanced-fields full-width" hidden>
                 <label>Status
                   <select id="lead-stage">
                     <option value="consultation">Consultation</option>
@@ -231,6 +236,7 @@
                 </label>
                 <input id="lead-follow-through" type="hidden" value="0" />
                 <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
+                </div>
                 <div class="hero-actions">
                   <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
                   <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>

@@ -12,6 +12,16 @@ function hasAutomationAccess(planId) {
   return normalized === 'silver' || normalized === 'gold' || normalized === 'pro' || normalized === 'platinum';
 }
 
+function resolveAutomationPlanId(account, settings) {
+  return String(
+    settings?.planId ||
+    account?.subscription?.planId ||
+    account?.subscription?.plan ||
+    account?.user?.planId ||
+    ''
+  ).trim().toLowerCase();
+}
+
 function setMessage(message, isError = false) {
   const node = document.getElementById('followups-message');
   node.textContent = message;
@@ -102,22 +112,23 @@ async function authedFetch(path, options = {}) {
 async function loadAccount() {
   account = await authedFetch('/api/auth/me');
   if (!account) return;
-  const planId = String(account.subscription?.planId || '').trim().toLowerCase();
-  const hasAutomation = hasAutomationAccess(planId);
+  const settings = await authedFetch('/api/automation/settings');
+  const planId = resolveAutomationPlanId(account, settings);
+  const hasAutomation = Boolean(settings?.settings?.automationAllowed) || hasAutomationAccess(planId);
   const runButton = document.getElementById('run-cadence');
   const toggleWrap = document.getElementById('automation-toggle-wrap');
   const toggle = document.getElementById('auto-send-toggle');
   const saveButton = document.getElementById('save-automation-settings');
   if (runButton) runButton.style.display = hasAutomation ? '' : 'none';
   if (toggleWrap) toggleWrap.style.display = hasAutomation ? '' : 'none';
-  if (toggle) toggle.checked = Boolean(account.user?.autoSendFollowups);
+  if (toggle) toggle.checked = Boolean(settings?.settings?.autoSendFollowups ?? account.user?.autoSendFollowups);
   if (saveButton) saveButton.disabled = !hasAutomation;
   if (!hasAutomation) {
     setMessage('Bronze plan uses manual follow-ups only. Review suggestions and send manually.');
   } else if (toggle?.checked) {
-    setMessage('Auto-send is ON. Run follow ups will send due messages automatically.');
+    setMessage(`${planId === 'silver' ? 'Silver' : 'Gold'} automation is ON. Run follow ups will auto-send due messages.`);
   } else {
-    setMessage('Auto-send is OFF. Run follow ups will queue due messages for manual review.');
+    setMessage(`${planId === 'silver' ? 'Silver' : 'Gold'} automation is available. Auto-send is OFF, so due follow-ups will queue for manual review.`);
   }
 }
 

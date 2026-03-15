@@ -15,6 +15,7 @@ let currentAccount = null;
 let leadSearchQuery = '';
 let leadSearchStage = '';
 let leadManagerTab = 'form';
+let advancedFieldsVisible = false;
 
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
@@ -216,8 +217,50 @@ function buildLeadFollowupReasons(lead) {
   return reasons.slice(0, 3);
 }
 
+function nextBestAction(lead) {
+  const stage = normalizeLeadStage(lead.stage);
+  const preapproved = Boolean(lead.pipelineProgress?.preapproval);
+  const days = daysSinceIso(lead.lastContactedAt || lead.lastActivityAt || lead.updatedAt || lead.createdAt);
+
+  if (!preapproved) return 'Ask about preapproval and financing readiness.';
+  if (stage === 'consultation') return 'Book the initial buyer consultation.';
+  if (stage === 'exclusive_buyer_agreement') return 'Confirm the exclusive buyer agreement is signed.';
+  if (stage === 'home_search') return 'Send curated listings that match the buyer criteria.';
+  if (stage === 'schedule_visits') return 'Schedule or confirm property tours.';
+  if (stage === 'home_inspection') return 'Check inspection progress and next decisions.';
+  if (stage === 'appraisal') return 'Follow up on appraisal timing and lender status.';
+  if (stage === 'sign_documents') return 'Prepare the client for signatures and final paperwork.';
+  if (stage === 'closing') return 'Keep the client warm through closing details.';
+  if (days !== null && days >= 5) return 'Send a follow-up before the lead goes cold.';
+  return 'Check in and confirm the next step.';
+}
+
+function updateAdvancedFieldsVisibility() {
+  const wrap = document.getElementById('advanced-fields');
+  const button = document.getElementById('toggle-advanced-fields');
+  if (!wrap || !button) return;
+  wrap.hidden = !advancedFieldsVisible;
+  button.textContent = advancedFieldsVisible ? 'Hide advanced scoring fields' : 'Show advanced scoring fields';
+  button.setAttribute('aria-expanded', String(advancedFieldsVisible));
+}
+
+function buildSampleCsv() {
+  return [
+    'name,email,phone,source,notes,last_contacted_at,stage,response_time_minutes,message_intent,follow_through_signal,weekly_touches,consultation,exclusive_buyer_agreement,preapproval',
+    'Avery Stone,avery@example.com,555-201-1000,Zillow,"Looking for 3 bed in west Little Rock",2026-03-10T00:00:00.000Z,consultation,45,warm,replied,2,true,false,false',
+    'Jordan Reed,jordan@example.com,555-201-1001,Referral,"Needs lender guidance before touring",2026-03-08T00:00:00.000Z,exclusive_buyer_agreement,20,hot,docs_shared,4,true,true,false'
+  ].join('\n');
+}
+
 function renderScoreDetails(data) {
-  document.getElementById('score-summary').textContent = data.whyScore.summary;
+  const plainSummary = [
+    data?.whyScore?.summary,
+    data?.signals?.messageIntent ? `Intent is ${data.signals.messageIntent}.` : '',
+    data?.pipelineProgress?.preapproval ? 'Preapproval is complete.' : 'Preapproval is still pending.'
+  ]
+    .filter(Boolean)
+    .join(' ');
+  document.getElementById('score-summary').textContent = plainSummary;
   document.getElementById('score-ai-meta').textContent = `Trend: ${data.behaviorTrend} | Confidence: ${data.confidenceScore}% | Intent confidence: ${Math.round((data.aiIntentClassification?.confidence || 0) * 100)}%`;
 
   const details = document.getElementById('score-details');
@@ -311,6 +354,7 @@ function renderLeadSearchResults() {
       <strong>${lead.name}</strong>
       <span class="meta">${lead.email || 'No email'}${lead.source ? ` | ${lead.source}` : ''}</span>
       <span class="meta">Stage: ${stageLabel} | Score ${lead.score}</span>
+      <span class="meta">Next: ${nextBestAction(lead)}</span>
       <div class="hero-actions">
         <button class="btn btn-secondary" type="button" data-search-view="${lead.id}">View Score</button>
         <button class="btn btn-secondary" type="button" data-search-edit="${lead.id}">Edit Lead</button>
@@ -406,6 +450,7 @@ function renderPickupSummary(summary) {
       <strong>${lead.name}</strong>
       <span class="meta">Last contact: ${lead.lastActivityLabel || 'No activity recorded'}</span>
       <span class="meta">Suggested action: ${lead.suggestedAction || 'Follow up'}</span>
+      <span class="meta">Next: ${nextBestAction(lead)}</span>
       <span class="meta">Score ${lead.score}</span>
     `;
     card.addEventListener('click', async () => {
@@ -430,6 +475,7 @@ function leadItem(lead) {
     <span class="meta">${lead.stage} | trend: ${lead.behaviorTrend}</span>
     <span class="score">Score: ${lead.score} | confidence: ${lead.confidenceScore}%</span>
     <span class="meta">Checklist stage: ${checklistStage}</span>
+    <span class="meta">Next best action: ${nextBestAction(lead)}</span>
     <span class="meta">Why this lead needs follow-up:</span>
     <ul class="meta">${reasons}</ul>
     <div class="hero-actions">
@@ -466,10 +512,14 @@ function clearLeadForm() {
   document.getElementById('lead-intent').value = 'unknown';
   document.getElementById('lead-follow-through').value = '0';
   document.getElementById('lead-touches').value = '0';
+  advancedFieldsVisible = false;
+  updateAdvancedFieldsVisibility();
 }
 
 function fillLeadForm(lead) {
   setLeadManagerTab('form');
+  advancedFieldsVisible = true;
+  updateAdvancedFieldsVisibility();
   document.getElementById('lead-id').value = lead.id;
   document.getElementById('lead-name').value = lead.name || '';
   document.getElementById('lead-email').value = lead.email || '';
@@ -641,6 +691,11 @@ document.getElementById('lead-cancel').addEventListener('click', () => {
   setLeadManagerStatus('Lead form cleared.');
 });
 
+document.getElementById('toggle-advanced-fields')?.addEventListener('click', () => {
+  advancedFieldsVisible = !advancedFieldsVisible;
+  updateAdvancedFieldsVisibility();
+});
+
 document.getElementById('load-demo-leads')?.addEventListener('click', async () => {
   const force = confirm('Load demo leads now? Click OK to replace existing leads, or Cancel to add only if account is empty.');
   try {
@@ -692,6 +747,11 @@ document.querySelectorAll('[data-manager-tab]').forEach((button) => {
     setLeadManagerTab(button.dataset.managerTab || 'form');
   });
 });
+
+const sampleCsvLink = document.getElementById('download-sample-csv');
+if (sampleCsvLink) {
+  sampleCsvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(buildSampleCsv())}`;
+}
 
 document.getElementById('lead-csv-import')?.addEventListener('click', async () => {
   const fileInput = document.getElementById('lead-csv-file');
@@ -923,6 +983,7 @@ for (const step of PIPELINE_STEPS) {
 
 clearLeadForm();
 setLeadManagerTab('form');
+updateAdvancedFieldsVisibility();
 renderCadenceQueue();
 setTrackingUrl('');
 document.getElementById('logout-button')?.addEventListener('click', async () => {

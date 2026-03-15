@@ -671,6 +671,12 @@ body[data-theme="light"] .lead-item {
   display: block;
 }
 
+.advanced-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .import-panel {
   margin-top: 4px;
 }
