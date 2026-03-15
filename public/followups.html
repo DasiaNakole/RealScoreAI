@@ -19,6 +19,14 @@
           <button id="run-cadence" class="btn btn-secondary" type="button" style="display: none;">Run follow ups</button>
           <button id="logout-button" class="btn btn-secondary" type="button">Logout</button>
         </div>
+        <div class="hero-actions" id="automation-toggle-wrap" style="display: none;">
+          <label class="meta" style="display:flex; align-items:center; gap:0.5rem;">
+            <input id="auto-send-toggle" type="checkbox" />
+            Auto-send follow-ups
+          </label>
+          <button id="save-automation-settings" class="btn btn-secondary" type="button">Save Auto-Send Setting</button>
+        </div>
+        <p class="meta" id="automation-settings-status"></p>
         <label>Select lead
           <select id="lead-select"></select>
         </label>

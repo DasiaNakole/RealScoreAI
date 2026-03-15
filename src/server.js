@@ -33,6 +33,7 @@ import {
   getUserById,
   hasUserEventForTrial,
   insertEvent,
+  listFeedback,
   listTrialingUsers,
   listEventsForLead,
   listLeadsByUser,
@@ -42,6 +43,7 @@ import {
   touchUser,
   updateUserRole,
   updateUserPasswordHash,
+  updateUserAutoSendFollowups,
   updateLeadForUser,
   updateLeadSnapshot,
   updateUserOnboarding,
@@ -197,6 +199,7 @@ function sanitizeUser(user) {
     email: user.email,
     role: user.role,
     betaFlag: user.beta_flag,
+    autoSendFollowups: user.auto_send_followups !== false,
     createdAt: user.created_at,
     lastActiveAt: user.last_active_at
   };
@@ -1421,6 +1424,44 @@ app.post("/api/feedback", requireAuth, async (req, res) => {
   res.status(201).json({ ok: true, feedback });
 });
 
+app.get("/api/automation/settings", requireAuth, async (req, res) => {
+  const planId = resolvePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan);
+  const automationAllowed = hasAutomationAccess(planId);
+  res.json({
+    settings: {
+      planId,
+      automationAllowed,
+      autoSendFollowups: automationAllowed ? req.user.auto_send_followups !== false : false
+    }
+  });
+});
+
+app.put("/api/automation/settings", requireAuth, async (req, res) => {
+  const planId = resolvePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan);
+  if (!hasAutomationAccess(planId)) {
+    return res.status(403).json({ error: "Automation settings are available on Silver and Gold plans." });
+  }
+
+  const autoSendFollowups = Boolean(req.body?.autoSendFollowups);
+  const updatedUser = await updateUserAutoSendFollowups(req.user.id, autoSendFollowups);
+  if (!updatedUser) return res.status(404).json({ error: "User not found." });
+
+  await insertEvent({
+    userId: req.user.id,
+    eventType: "automation_settings_updated",
+    metadata: { autoSendFollowups }
+  });
+
+  res.json({
+    ok: true,
+    settings: {
+      planId,
+      automationAllowed: true,
+      autoSendFollowups: updatedUser.auto_send_followups !== false
+    }
+  });
+});
+
 app.get("/api/ai/tone-profile", requireAuth, requireActiveAccess, async (req, res) => {
   const sentEvents = await listUserEventsByType(req.user.id, "followup_sent", 50);
   const profile = buildToneProfile(sentEvents);
@@ -1694,8 +1735,7 @@ app.post("/api/automation/followup-cadence", requireAuth, requireActiveAccess, a
   if (!hasAutomationAccess(req.subscription?.planId)) {
     return res.status(403).json({ error: "Follow-up automation is available on Silver and Gold plans." });
   }
-  const normalizedPlan = resolvePlanId(req.subscription?.planId);
-  const autoSendEnabled = normalizedPlan === "gold";
+  const autoSendEnabled = req.user.auto_send_followups !== false;
   const now = Date.now();
   const leads = await listLeadsByUser(req.user.id);
   const due = [];
@@ -1953,6 +1993,12 @@ app.post("/api/admin/demo-accounts", requireAdminAccess, async (req, res) => {
 
 app.get("/api/admin/metrics", requireAdminAccess, async (_req, res) => {
   res.json(await getAdminMetrics());
+});
+
+app.get("/api/admin/feedback", requireAdminAccess, async (req, res) => {
+  const limitRaw = Number(req.query?.limit || 100);
+  const items = await listFeedback(limitRaw);
+  res.json({ feedback: items });
 });
 
 app.get("/api/admin/users", requireAdminAccess, async (_req, res) => {

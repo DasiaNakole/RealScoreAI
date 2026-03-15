@@ -7,12 +7,15 @@ create table if not exists users (
   name text not null,
   role text not null default 'beta' check (role in ('admin', 'beta', 'broker', 'agent')),
   beta_flag boolean not null default true,
+  auto_send_followups boolean not null default true,
   market text,
   monthly_lead_volume integer,
   goal text,
   created_at timestamptz not null default now(),
   last_active_at timestamptz
 );
+
+alter table users add column if not exists auto_send_followups boolean not null default true;
 
 create table if not exists leads (
   id uuid primary key default gen_random_uuid(),

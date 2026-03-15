@@ -39,9 +39,9 @@ function mapLead(row) {
 
 export async function createUser({ email, passwordHash, name, role = "beta", betaFlag = true }) {
   const result = await pool.query(
-    `insert into users (email, password_hash, name, role, beta_flag, last_active_at)
-     values ($1, $2, $3, $4, $5, now())
-     returning id, email, name, role, beta_flag, created_at, last_active_at`,
+    `insert into users (email, password_hash, name, role, beta_flag, auto_send_followups, last_active_at)
+     values ($1, $2, $3, $4, $5, true, now())
+     returning id, email, name, role, beta_flag, auto_send_followups, created_at, last_active_at`,
     [email, passwordHash, name, role, betaFlag]
   );
   return result.rows[0];
@@ -49,7 +49,7 @@ export async function createUser({ email, passwordHash, name, role = "beta", bet
 
 export async function getUserByEmail(email) {
   const result = await pool.query(
-    `select id, email, password_hash, name, role, beta_flag, created_at, last_active_at, market, monthly_lead_volume, goal
+    `select id, email, password_hash, name, role, beta_flag, auto_send_followups, created_at, last_active_at, market, monthly_lead_volume, goal
      from users where email = $1`,
     [email]
   );
@@ -58,7 +58,7 @@ export async function getUserByEmail(email) {
 
 export async function getUserById(userId) {
   const result = await pool.query(
-    `select id, email, password_hash, name, role, beta_flag, created_at, last_active_at, market, monthly_lead_volume, goal
+    `select id, email, password_hash, name, role, beta_flag, auto_send_followups, created_at, last_active_at, market, monthly_lead_volume, goal
      from users where id = $1`,
     [userId]
   );
@@ -67,7 +67,7 @@ export async function getUserById(userId) {
 
 export async function listUsers() {
   const result = await pool.query(
-    `select u.id, u.email, u.name, u.role, u.beta_flag, u.created_at, u.last_active_at,
+    `select u.id, u.email, u.name, u.role, u.beta_flag, u.auto_send_followups, u.created_at, u.last_active_at,
             s.plan, s.status as subscription_status, s.trial_ends_at
      from users u
      left join subscriptions s on s.user_id = u.id
@@ -99,7 +99,7 @@ export async function updateUserRole(userId, role, betaFlag = false) {
     `update users
      set role = $2, beta_flag = $3, last_active_at = now()
      where id = $1
-     returning id, email, password_hash, name, role, beta_flag, created_at, last_active_at, market, monthly_lead_volume, goal`,
+     returning id, email, password_hash, name, role, beta_flag, auto_send_followups, created_at, last_active_at, market, monthly_lead_volume, goal`,
     [userId, role, betaFlag]
   );
   return result.rows[0] || null;
@@ -110,10 +110,21 @@ export async function updateUserOnboarding(userId, { market, monthlyLeadVolume, 
     `update users
      set market = $2, monthly_lead_volume = $3, goal = $4, last_active_at = now()
      where id = $1
-     returning id, email, name, role, beta_flag, created_at, last_active_at, market, monthly_lead_volume, goal`,
+     returning id, email, name, role, beta_flag, auto_send_followups, created_at, last_active_at, market, monthly_lead_volume, goal`,
     [userId, market, monthlyLeadVolume, goal]
   );
   return result.rows[0];
+}
+
+export async function updateUserAutoSendFollowups(userId, enabled) {
+  const result = await pool.query(
+    `update users
+     set auto_send_followups = $2, last_active_at = now()
+     where id = $1
+     returning id, email, name, role, beta_flag, auto_send_followups, created_at, last_active_at, market, monthly_lead_volume, goal`,
+    [userId, Boolean(enabled)]
+  );
+  return result.rows[0] || null;
 }
 
 export async function upsertSubscription({ userId, plan, status, paymentMethodLast4 = null, cardholderName = null, trialEndsAt = null, stripeCustomerId = null }) {
@@ -549,4 +560,17 @@ export async function createFeedback({ userId, page = "dashboard", message }) {
     [userId, page, message]
   );
   return result.rows[0];
+}
+
+export async function listFeedback(limit = 100) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 100;
+  const result = await pool.query(
+    `select f.id, f.user_id, f.page, f.message, f.created_at, u.email, u.name
+     from feedback f
+     join users u on u.id = f.user_id
+     order by f.created_at desc
+     limit $1`,
+    [safeLimit]
+  );
+  return result.rows;
 }

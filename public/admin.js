@@ -3,6 +3,7 @@ const token = localStorage.getItem(TOKEN_KEY);
 const messageNode = document.getElementById('admin-message');
 const inviteListNode = document.getElementById('invite-list');
 const userListNode = document.getElementById('user-list');
+const feedbackListNode = document.getElementById('feedback-list');
 const templateKeyNode = document.getElementById('template-key');
 const templatePlanScopeNode = document.getElementById('template-plan-scope');
 const templateSubjectNode = document.getElementById('template-subject');
@@ -184,6 +185,28 @@ function renderUsers(users) {
   });
 }
 
+function renderFeedback(items) {
+  if (!feedbackListNode) return;
+  feedbackListNode.innerHTML = '';
+
+  if (!items.length) {
+    feedbackListNode.innerHTML = '<p class="meta">No feedback yet.</p>';
+    return;
+  }
+
+  items.forEach((entry) => {
+    const card = document.createElement('article');
+    card.className = 'invite-item';
+    const createdAt = entry.created_at ? new Date(entry.created_at).toLocaleString() : 'n/a';
+    card.innerHTML = `
+      <strong>${entry.name || 'User'} (${entry.email || 'unknown'})</strong>
+      <span class="meta">Page: ${entry.page || 'dashboard'} | ${createdAt}</span>
+      <span class="meta">${entry.message || ''}</span>
+    `;
+    feedbackListNode.appendChild(card);
+  });
+}
+
 async function loadUsers() {
   const data = await adminFetch('/api/admin/users');
   renderUsers(data.users || []);
@@ -192,6 +215,11 @@ async function loadUsers() {
 async function loadInvites() {
   const data = await adminFetch('/api/admin/invites');
   renderInvites(data.invites || []);
+}
+
+async function loadFeedback() {
+  const data = await adminFetch('/api/admin/feedback?limit=200');
+  renderFeedback(data.feedback || []);
 }
 
 async function loadTemplates() {
@@ -256,6 +284,7 @@ document.getElementById('refresh-invites').addEventListener('click', async () =>
     await loadInvites();
     await loadUsers();
     await loadTemplates();
+    await loadFeedback();
     setMessage('Admin data refreshed.');
   } catch (error) {
     setMessage(error.message, true);
@@ -424,6 +453,7 @@ async function init() {
     await loadInvites();
     await loadUsers();
     await loadTemplates();
+    await loadFeedback();
     setMessage('Admin ready.');
   } catch (error) {
     setMessage(error.message, true);

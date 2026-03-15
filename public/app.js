@@ -160,6 +160,13 @@ function setLeadManagerStatus(message, isError = false) {
   node.style.color = isError ? '#ff5f7a' : '';
 }
 
+function setFeedbackStatus(message, isError = false) {
+  const node = document.getElementById('feedback-status');
+  if (!node) return;
+  node.textContent = message;
+  node.style.color = isError ? '#ff5f7a' : '#9aa8be';
+}
+
 function setTrackingStatus(message, isError = false) {
   const node = document.getElementById('tracking-status');
   if (!node) return;
@@ -661,9 +668,28 @@ document.getElementById('insert-tracking-link')?.addEventListener('click', () =>
   setTrackingStatus('Tracked link inserted into follow-up message.');
 });
 
-document.getElementById('feedback-button')?.addEventListener('click', async () => {
-  const message = window.prompt('Send feedback or report an issue:');
-  if (!message) return;
+document.getElementById('feedback-button')?.addEventListener('click', () => {
+  const modal = document.getElementById('feedback-modal');
+  const input = document.getElementById('feedback-message');
+  if (!modal || !input) return;
+  modal.style.display = '';
+  input.focus();
+  setFeedbackStatus('');
+});
+
+document.getElementById('feedback-cancel')?.addEventListener('click', () => {
+  const modal = document.getElementById('feedback-modal');
+  if (modal) modal.style.display = 'none';
+});
+
+document.getElementById('feedback-submit')?.addEventListener('click', async () => {
+  const modal = document.getElementById('feedback-modal');
+  const input = document.getElementById('feedback-message');
+  const message = String(input?.value || '').trim();
+  if (!message) {
+    setFeedbackStatus('Enter feedback first.', true);
+    return;
+  }
 
   try {
     await authedFetch('/api/feedback', {
@@ -674,9 +700,12 @@ document.getElementById('feedback-button')?.addEventListener('click', async () =
         message
       })
     });
+    input.value = '';
+    setFeedbackStatus('Feedback submitted. Thank you.');
     setLeadManagerStatus('Thanks - feedback submitted.');
+    if (modal) modal.style.display = 'none';
   } catch (error) {
-    setLeadManagerStatus(error.message, true);
+    setFeedbackStatus(error.message, true);
   }
 });
 
