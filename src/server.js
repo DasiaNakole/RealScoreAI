@@ -261,12 +261,23 @@ async function loadDemoLeadsForUser(userId, { force = false } = {}) {
   return { createdCount, skipped: false };
 }
 
-async function getSubscriptionStatus(userId) {
+function resolveEffectivePlanId(subscriptionPlan, user) {
+  const normalizedPlanId = resolvePlanId(subscriptionPlan);
+  const isBetaUser = Boolean(user?.beta_flag);
+  if (isBetaUser && normalizedPlanId === "bronze") {
+    return "silver";
+  }
+  return normalizedPlanId;
+}
+
+async function getSubscriptionStatus(userId, userOverride = null) {
   const subscription = await getSubscriptionByUserId(userId);
   if (!subscription) {
     return { hasAccess: false, reason: "missing_payment", subscription: null };
   }
 
+  const user = userOverride || (await getUserById(userId));
+  const effectivePlanId = resolveEffectivePlanId(subscription.plan, user);
   const now = Date.now();
   const trialEnds = subscription.trial_ends_at ? new Date(subscription.trial_ends_at).getTime() : 0;
   const paid = subscription.status === "active";
@@ -276,7 +287,8 @@ async function getSubscriptionStatus(userId) {
     hasAccess: paid || trialActive,
     reason: paid || trialActive ? "ok" : "trial_expired",
     subscription: {
-      planId: subscription.plan,
+      planId: effectivePlanId,
+      rawPlanId: resolvePlanId(subscription.plan),
       status: subscription.status,
       trialEndsAt: subscription.trial_ends_at,
       paymentMethodLast4: subscription.payment_method_last4,
@@ -285,7 +297,8 @@ async function getSubscriptionStatus(userId) {
   };
 }
 
-function getSessionFromRequest(req) {
+function getSessionFromRequest
+(req) {
   const authHeader = req.headers.authorization || "";
   const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   const queryToken = typeof req.query.token === "string" ? req.query.token : "";
@@ -312,7 +325,7 @@ async function requireAuth(req, res, next) {
 }
 
 async function requireActiveAccess(req, res, next) {
-  const access = await getSubscriptionStatus(req.user.id);
+  const access = await getSubscriptionStatus(req.user.id, req.user);
   if (!access.hasAccess) {
     return res.status(402).json({ error: "Payment required before dashboard access.", code: access.reason });
   }
@@ -900,7 +913,7 @@ app.post("/api/auth/login", async (req, res) => {
   const token = createSession(user.id);
   await insertEvent({ userId: user.id, eventType: "login", metadata: { source: "password" } });
 
-  const subscriptionState = await getSubscriptionStatus(user.id);
+  const subscriptionState = await getSubscriptionStatus(user.id, user);
 
   return res.json({
     token,
@@ -986,7 +999,7 @@ app.post("/api/auth/logout", requireAuth, async (req, res) => {
 });
 
 app.get("/api/auth/me", requireAuth, async (req, res) => {
-  const subscriptionState = await getSubscriptionStatus(req.user.id);
+  const subscriptionState = await getSubscriptionStatus(req.user.id, req.user);
   res.json({
     user: sanitizeUser(req.user),
     onboardingComplete: Boolean(req.user.market && req.user.monthly_lead_volume && req.user.goal),
@@ -1032,7 +1045,7 @@ app.post("/api/onboarding", requireAuth, async (req, res) => {
 });
 
 app.get("/api/billing/status", requireAuth, async (req, res) => {
-  res.json(await getSubscriptionStatus(req.user.id));
+  res.json(await getSubscriptionStatus(req.user.id, req.user));
 });
 
 app.post("/api/billing/start-trial", requireAuth, async (req, res) => {
@@ -1632,7 +1645,7 @@ app.post("/api/feedback", requireAuth, async (req, res) => {
 });
 
 app.get("/api/automation/settings", requireAuth, async (req, res) => {
-  const planId = resolvePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan);
+  const planId = resolveEffectivePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan, req.user);
   const automationAllowed = hasAutomationAccess(planId);
   res.json({
     settings: {
@@ -1644,7 +1657,7 @@ app.get("/api/automation/settings", requireAuth, async (req, res) => {
 });
 
 app.put("/api/automation/settings", requireAuth, async (req, res) => {
-  const planId = resolvePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan);
+  const planId = resolveEffectivePlanId(req.subscription?.planId || (await getSubscriptionByUserId(req.user.id))?.plan, req.user);
   if (!hasAutomationAccess(planId)) {
     return res.status(403).json({ error: "Automation settings are available on Silver and Gold plans." });
   }

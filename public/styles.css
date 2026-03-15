@@ -124,12 +124,12 @@ h3 {
 }
 
 .dashboard {
-  width: min(1280px, 94vw);
+  width: min(1700px, calc(100vw - 32px));
   gap: 18px;
 }
 
 .utility-page {
-  width: min(1320px, 94vw);
+  width: min(1700px, calc(100vw - 32px));
 }
 
 .first-run-panel {
@@ -192,6 +192,10 @@ h3 {
 }
 
 .content-grid-single-rail {
+  grid-template-columns: 1fr;
+}
+
+.content-grid.content-grid-single-rail {
   grid-template-columns: 1fr;
 }
 
