@@ -14,6 +14,7 @@ let lastTrackingUrl = '';
 let currentAccount = null;
 let leadSearchQuery = '';
 let leadSearchStage = '';
+let leadManagerTab = 'form';
 
 const FOLLOW_THROUGH_SIGNAL_TO_RATE = {
   none: 0.1,
@@ -342,6 +343,20 @@ function renderLeadSearchResults() {
   });
 }
 
+function setLeadManagerTab(nextTab) {
+  leadManagerTab = nextTab;
+
+  document.querySelectorAll('[data-manager-tab]').forEach((button) => {
+    const isActive = button.dataset.managerTab === nextTab;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+
+  document.querySelectorAll('[data-manager-view]').forEach((section) => {
+    section.classList.toggle('active', section.dataset.managerView === nextTab);
+  });
+}
+
 function setText(id, value) {
   const node = document.getElementById(id);
   if (node) node.textContent = String(value);
@@ -447,6 +462,7 @@ function clearLeadForm() {
 }
 
 function fillLeadForm(lead) {
+  setLeadManagerTab('form');
   document.getElementById('lead-id').value = lead.id;
   document.getElementById('lead-name').value = lead.name || '';
   document.getElementById('lead-email').value = lead.email || '';
@@ -612,6 +628,7 @@ function connectRealtimeStream() {
 
 document.getElementById('lead-cancel').addEventListener('click', () => {
   clearLeadForm();
+  setLeadManagerTab('form');
   setLeadManagerStatus('Lead form cleared.');
 });
 
@@ -641,6 +658,12 @@ document.getElementById('lead-search')?.addEventListener('input', (event) => {
 document.getElementById('lead-search-stage')?.addEventListener('change', (event) => {
   leadSearchStage = String(event.target?.value || '');
   renderLeadSearchResults();
+});
+
+document.querySelectorAll('[data-manager-tab]').forEach((button) => {
+  button.addEventListener('click', () => {
+    setLeadManagerTab(button.dataset.managerTab || 'form');
+  });
 });
 
 document.getElementById('lead-csv-import')?.addEventListener('click', async () => {
@@ -732,6 +755,7 @@ document.getElementById('lead-form').addEventListener('submit', async (event) =>
     }
 
     clearLeadForm();
+    setLeadManagerTab('form');
     await loadDashboard();
   } catch (error) {
     setLeadManagerStatus(error.message, true);
@@ -871,6 +895,7 @@ for (const step of PIPELINE_STEPS) {
 }
 
 clearLeadForm();
+setLeadManagerTab('form');
 renderCadenceQueue();
 setTrackingUrl('');
 document.getElementById('logout-button')?.addEventListener('click', async () => {

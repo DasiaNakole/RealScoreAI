@@ -133,97 +133,114 @@
                 <p class="meta">Add, update, and organize lead intelligence without leaving the dashboard.</p>
               </div>
             </div>
-            <form id="lead-form" class="lead-form-grid">
-              <input type="hidden" id="lead-id" />
-              <label>Name <input id="lead-name" required /></label>
-              <label>Email <input id="lead-email" type="email" required /></label>
-              <label>Phone <input id="lead-phone" /></label>
-              <label>Source <input id="lead-source" placeholder="Zillow, referral, open house" /></label>
-              <label>Last contacted
-                <input id="lead-last-contacted" type="date" />
-              </label>
-              <label class="full-width">Notes
-                <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
-              </label>
-              <label>Status
-                <select id="lead-stage">
-                  <option value="consultation">Consultation</option>
-                  <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
-                  <option value="preapproval">Preapproval</option>
-                  <option value="home_search">Home Search</option>
-                  <option value="schedule_visits">Schedule Visits</option>
-                  <option value="home_inspection">Home Inspection</option>
-                  <option value="appraisal">Appraisal</option>
-                  <option value="sign_documents">Sign Documents</option>
-                  <option value="closing">Closing</option>
-                  <option value="closed">Closed</option>
-                  <option value="nurture">Nurture</option>
-                </select>
-              </label>
-              <fieldset class="pipeline-checklist">
-                <legend>Lead Progress Checklist</legend>
-                <label><input type="checkbox" id="pipeline-consultation" /> Consultation</label>
-                <label><input type="checkbox" id="pipeline-exclusive_buyer_agreement" /> Exclusive Buyer Agreement (EBA)</label>
-                <label class="critical-step"><input type="checkbox" id="pipeline-preapproval" /> Preapproval (CRUCIAL)</label>
-                <label><input type="checkbox" id="pipeline-home_search" /> Home Search</label>
-                <label><input type="checkbox" id="pipeline-schedule_visits" /> Schedule Visits</label>
-                <label><input type="checkbox" id="pipeline-home_inspection" /> Home Inspection</label>
-                <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
-                <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
-                <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
-                <label><input type="checkbox" id="pipeline-closed" /> Closed</label>
-              </fieldset>
-              <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
-              <label>Buyer Intent
-                <select id="lead-intent">
-                  <option value="hot">hot (ready now)</option>
-                  <option value="warm">warm (shopping soon)</option>
-                  <option value="neutral">neutral (researching)</option>
-                  <option value="cold">cold (long timeline)</option>
-                  <option value="unknown">unknown</option>
-                </select>
-              </label>
-              <label>Follow-Through Signal
-                <select id="lead-follow-through-signal">
-                  <option value="none">none yet</option>
-                  <option value="replied">replied quickly</option>
-                  <option value="docs_shared">docs/pre-qual shared</option>
-                  <option value="tour_booked">tour booked</option>
-                  <option value="multiple_tours">multiple tours completed</option>
-                  <option value="offer_submitted">offer submitted</option>
-                </select>
-              </label>
-              <input id="lead-follow-through" type="hidden" value="0" />
-              <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
-              <div class="hero-actions">
-                <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
-                <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>
-                <button id="load-demo-leads" class="btn btn-secondary" type="button">Load demo leads (optional)</button>
-              </div>
-            </form>
+            <div class="lead-manager-menu" role="tablist" aria-label="Lead manager views">
+              <button class="btn btn-secondary lead-manager-tab active" id="tab-form" type="button" data-manager-tab="form" aria-pressed="true">Form</button>
+              <button class="btn btn-secondary lead-manager-tab" id="tab-import" type="button" data-manager-tab="import" aria-pressed="false">Import</button>
+              <button class="btn btn-secondary lead-manager-tab" id="tab-library" type="button" data-manager-tab="library" aria-pressed="false">Library</button>
+            </div>
             <p id="lead-manager-status" class="meta"></p>
-            <section class="import-panel">
+            <section class="manager-view active" id="manager-view-form" data-manager-view="form">
+              <form id="lead-form" class="lead-form-grid">
+                <input type="hidden" id="lead-id" />
+                <label>Name <input id="lead-name" required /></label>
+                <label>Email <input id="lead-email" type="email" required /></label>
+                <label>Phone <input id="lead-phone" /></label>
+                <label>Source <input id="lead-source" placeholder="Zillow, referral, open house" /></label>
+                <label>Last contacted
+                  <input id="lead-last-contacted" type="date" />
+                </label>
+                <label class="full-width">Notes
+                  <textarea id="lead-notes" rows="3" placeholder="Key context, preferences, objections, next steps"></textarea>
+                </label>
+                <label>Status
+                  <select id="lead-stage">
+                    <option value="consultation">Consultation</option>
+                    <option value="exclusive_buyer_agreement">Exclusive Buyer Agreement (EBA)</option>
+                    <option value="preapproval">Preapproval</option>
+                    <option value="home_search">Home Search</option>
+                    <option value="schedule_visits">Schedule Visits</option>
+                    <option value="home_inspection">Home Inspection</option>
+                    <option value="appraisal">Appraisal</option>
+                    <option value="sign_documents">Sign Documents</option>
+                    <option value="closing">Closing</option>
+                    <option value="closed">Closed</option>
+                    <option value="nurture">Nurture</option>
+                  </select>
+                </label>
+                <fieldset class="pipeline-checklist">
+                  <legend>Lead Progress Checklist</legend>
+                  <label><input type="checkbox" id="pipeline-consultation" /> Consultation</label>
+                  <label><input type="checkbox" id="pipeline-exclusive_buyer_agreement" /> Exclusive Buyer Agreement (EBA)</label>
+                  <label class="critical-step"><input type="checkbox" id="pipeline-preapproval" /> Preapproval (CRUCIAL)</label>
+                  <label><input type="checkbox" id="pipeline-home_search" /> Home Search</label>
+                  <label><input type="checkbox" id="pipeline-schedule_visits" /> Schedule Visits</label>
+                  <label><input type="checkbox" id="pipeline-home_inspection" /> Home Inspection</label>
+                  <label><input type="checkbox" id="pipeline-appraisal" /> Appraisal</label>
+                  <label><input type="checkbox" id="pipeline-sign_documents" /> Sign Documents</label>
+                  <label><input type="checkbox" id="pipeline-closing" /> Closing</label>
+                  <label><input type="checkbox" id="pipeline-closed" /> Closed</label>
+                </fieldset>
+                <label>Avg Response Delay (minutes) <input id="lead-response-time" type="number" min="0" value="60" /></label>
+                <label>Buyer Intent
+                  <select id="lead-intent">
+                    <option value="hot">hot (ready now)</option>
+                    <option value="warm">warm (shopping soon)</option>
+                    <option value="neutral">neutral (researching)</option>
+                    <option value="cold">cold (long timeline)</option>
+                    <option value="unknown">unknown</option>
+                  </select>
+                </label>
+                <label>Follow-Through Signal
+                  <select id="lead-follow-through-signal">
+                    <option value="none">none yet</option>
+                    <option value="replied">replied quickly</option>
+                    <option value="docs_shared">docs/pre-qual shared</option>
+                    <option value="tour_booked">tour booked</option>
+                    <option value="multiple_tours">multiple tours completed</option>
+                    <option value="offer_submitted">offer submitted</option>
+                  </select>
+                </label>
+                <input id="lead-follow-through" type="hidden" value="0" />
+                <label>Weekly Touches (texts/calls/emails) <input id="lead-touches" type="number" min="0" value="0" /></label>
+                <div class="hero-actions">
+                  <button id="lead-save" class="btn btn-primary" type="submit">Save lead</button>
+                  <button id="lead-cancel" class="btn btn-secondary" type="button">Clear</button>
+                  <button id="load-demo-leads" class="btn btn-secondary" type="button">Load demo leads (optional)</button>
+                </div>
+              </form>
+            </section>
+            <section class="manager-view" id="manager-view-import" data-manager-view="import">
+              <section class="import-panel">
+                <div class="panel-toolbar">
+                  <div>
+                    <h3>Import CSV</h3>
+                    <p class="meta">Upload a spreadsheet of leads. Supported columns include name, email, phone, source, notes, stage, response time, intent, follow-through signal, weekly touches, and last contacted.</p>
+                  </div>
+                </div>
+                <div class="import-grid">
+                  <label class="full-width">CSV file
+                    <input id="lead-csv-file" type="file" accept=".csv,text/csv" />
+                  </label>
+                  <label class="import-checkbox">
+                    <input id="lead-csv-update-existing" type="checkbox" checked />
+                    Update existing leads when email matches
+                  </label>
+                  <div class="hero-actions">
+                    <button id="lead-csv-import" class="btn btn-secondary" type="button">Import CSV</button>
+                  </div>
+                </div>
+                <p id="lead-import-status" class="meta"></p>
+              </section>
+            </section>
+            <section class="manager-view" id="manager-view-library" data-manager-view="library">
               <div class="panel-toolbar">
                 <div>
-                  <h3>Import CSV</h3>
-                  <p class="meta">Upload a spreadsheet of leads. Supported columns include name, email, phone, source, notes, stage, response time, intent, follow-through signal, weekly touches, and last contacted.</p>
+                  <h3>Lead library</h3>
+                  <p class="meta">Browse all saved leads from one place when you need a full list.</p>
                 </div>
               </div>
-              <div class="import-grid">
-                <label class="full-width">CSV file
-                  <input id="lead-csv-file" type="file" accept=".csv,text/csv" />
-                </label>
-                <label class="import-checkbox">
-                  <input id="lead-csv-update-existing" type="checkbox" checked />
-                  Update existing leads when email matches
-                </label>
-                <div class="hero-actions">
-                  <button id="lead-csv-import" class="btn btn-secondary" type="button">Import CSV</button>
-                </div>
-              </div>
-              <p id="lead-import-status" class="meta"></p>
+              <div id="lead-manager-list" class="lead-manager-list"></div>
             </section>
-            <div id="lead-manager-list" class="lead-manager-list"></div>
           </section>
 
           <section class="panel explanation">

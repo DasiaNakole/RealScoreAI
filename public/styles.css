@@ -134,6 +134,9 @@ h3 {
 
 .search-panel {
   padding-top: 20px;
+  position: sticky;
+  top: 16px;
+  z-index: 3;
 }
 
 .hero,
@@ -464,6 +467,34 @@ body[data-theme="light"] .lead-item {
 
 .search-panel #lead-search-results {
   margin-top: 14px;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.search-panel .invite-item {
+  padding: 10px 12px;
+  gap: 4px;
+  border-radius: 14px;
+}
+
+.search-panel .invite-item strong {
+  font-size: 0.98rem;
+}
+
+.search-panel .invite-item .meta {
+  font-size: 0.84rem;
+}
+
+.search-panel .hero-actions {
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.search-panel .btn {
+  padding: 8px 14px;
+  font-size: 0.82rem;
 }
 
 .main-column,
@@ -588,10 +619,33 @@ body[data-theme="light"] .lead-item {
   top: 20px;
 }
 
+.lead-manager-menu {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
+.lead-manager-tab {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+
+.lead-manager-tab.active {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(31, 210, 255, 0.18);
+}
+
+.manager-view {
+  display: none;
+}
+
+.manager-view.active {
+  display: block;
+}
+
 .import-panel {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  margin-top: 4px;
 }
 
 .import-grid {
@@ -686,6 +740,10 @@ body[data-theme="light"] .lead-item {
 
   .search-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .search-panel {
+    position: static;
   }
 }
 
